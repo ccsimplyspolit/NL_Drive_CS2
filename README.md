@@ -1,6 +1,8 @@
 # NL_Drive_CS2
 
-![Build and Release](https://github.com/ccsimplyspolit/NL_Drive_CS2/actions/workflows/build-release.yml/badge.svg)
+![Latest release](https://img.shields.io/github/v/release/ccsimplyspolit/NL_Drive_CS2?label=latest)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D4)
+![Docs](https://img.shields.io/badge/docs-RU%20%2F%20EN-35C46A)
 
 ![NL_Drive_CS2 hero](docs/assets/readme-hero.png)
 
