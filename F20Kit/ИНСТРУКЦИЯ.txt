@@ -1,0 +1,391 @@
+================================================================
+                     F20Kit - ПОЛНАЯ ИНСТРУКЦИЯ
+================================================================
+
+СОДЕРЖАНИЕ
+----------
+  1. ЧТО ЭТО И КАК РАБОТАЕТ
+  2. ТРЕБОВАНИЯ К СИСТЕМЕ
+  3. ПЕРВЫЙ ЗАПУСК - пошагово
+  4. ОТКЛЮЧЕНИЕ ПРЕПЯТСТВИЙ (HVCI, Secure Boot, AntiCheat)
+  5. ЕЖЕДНЕВНАЯ РАБОТА
+  6. ПОЛНАЯ ВЫГРУЗКА (без ребута)
+  7. ДИАГНОСТИКА BSOD
+  8. РАСПРОСТРАНЁННЫЕ ОШИБКИ (с автофиксами)
+  9. ОТЛАДКА В DBGVIEW
+  10. ВНУТРЕННЕЕ УСТРОЙСТВО (для разработчика)
+
+
+================================================================
+1. ЧТО ЭТО И КАК РАБОТАЕТ
+================================================================
+
+F20Driver - kernel-mode драйвер. На каждый kill в CS2:
+  - жмёт F20 ровно 2.5 секунды (статичный hold, дальнейшие kills в этом
+    окне игнорируются - это и есть cooldown);
+  - один раз нажимает случайную клавишу Numpad 0-9 (равномерно из 9,
+    исключая предыдущую -> никогда два одинаковых подряд).
+
+Что важно знать:
+  * Драйвер читает m_iNumRoundKills у ЛОКАЛЬНОГО игрока (через chain
+    dwLocalPlayerController -> m_pActionTrackingServices -> m_iNumRoundKills).
+    Кили тиммейтов / противников НЕ триггерят F20.
+  * NumLock должен быть ВКЛЮЧЁН ВРУЧНУЮ перед запуском. Драйвер его НЕ
+    переключает (раньше переключал - получался дребезг LED, удалили).
+  * Никакого оверлея, никаких хоткеев. Только мониторинг памяти + нажатия.
+  * Communication c usermode минимальный - только named event для unload.
+
+
+================================================================
+2. ТРЕБОВАНИЯ К СИСТЕМЕ
+================================================================
+
+Обязательно:
+  - Windows 10 x64 (1607+) или Windows 11 x64 (любой билд)
+  - Права администратора (kdmapper грузит уязвимый драйвер)
+  - Secure Boot ВЫКЛЮЧЕН (если включён - kdmapper не сможет загрузить
+    iqvw64e.sys; отключается только через BIOS/UEFI)
+  - VulnerableDriverBlocklist ВЫКЛЮЧЕН (Microsoft заблокировал iqvw64e в
+    октябре 2022; START.bat сам отключит при необходимости)
+  - HVCI/Memory Integrity ВЫКЛЮЧЕН (иначе DSE не даст загрузить unsigned;
+    START.bat сам отключит при необходимости)
+
+Не нужно:
+  - Python больше НЕ нужен. analyze_kbdclass.exe это нативный C++,
+    использующий PDB symbols + Windows BCrypt для SHA256.
+  - Если analyzer не смог получить PDB symbol и нет fallback signature match -
+    получишь "monitor-only mode" и нужно прислать разработчику diag_collect.bat zip.
+
+КАК ПРОВЕРИТЬ что всё готово:
+  Просто запусти START.bat - он сам всё проверит И ПОЧИНИТ что может.
+  Для read-only диагностики - preflight.bat (без авто-фиксов).
+
+
+================================================================
+3. ПЕРВЫЙ ЗАПУСК - пошагово
+================================================================
+
+Шаг 1. Один запуск - всё автоматически
+---------------------------------------
+1. Запусти CS2 (Fullscreen Windowed для engine_no_focus_sleep 0).
+2. ВКЛЮЧИ NumLock на клавиатуре (нажми один раз если LED не горит).
+3. Двойной клик: START.bat. Он сам сделает:
+   a) запросит права администратора;
+   b) ОТКЛЮЧИТ VulnerableDriverBlocklist если включён;
+   c) ОТКЛЮЧИТ HVCI/Memory Integrity если включён;
+   d) ПРЕДУПРЕДИТ про Secure Boot если включён (его надо вручную в BIOS);
+   e) ПЕРЕЗАГРУЗИТ систему если применил registry-фиксы (15 сек countdown);
+   f) после ребута (если был) - запусти START.bat снова;
+   g) убьёт работающие AC процессы (FACEIT, ESEA, EAC, BattlEye, Vanguard);
+   h) почистит lingering iqvw64e (если был от предыдущего падения kdmap);
+   i) безопасно остановит предыдущий F20Driver и сделает true unload только
+      если worker-exit подтверждён;
+   j) скачает свежие CS2 offsets с github:a2x/cs2-dumper;
+   k) запустит analyze_kbdclass.exe (нативный, без Python);
+   l) загрузит F20Driver.sys через kdmap.exe (--indPages, tracked);
+   m) выведет "Driver loaded".
+4. В консоли CS2 пропиши:
+        unbind F20
+5. Играй. На каждый kill F20 будет нажата 2.5 сек + случайная Numpad.
+
+Ничего ставить и крутить вручную не надо - START.bat покрывает 99%
+блокеров. Единственное что НЕ автоматизируется - Secure Boot (отключение
+только из BIOS).
+
+
+================================================================
+4. ОТКЛЮЧЕНИЕ ПРЕПЯТСТВИЙ
+================================================================
+
+VulnerableDriverBlocklist (автофикс есть)
+------------------------------------------
+START.bat сам проставит:
+    HKLM\SYSTEM\CurrentControlSet\Control\CI\Config
+    VulnerableDriverBlocklistEnable = DWORD:0
+
+Вручную:
+    regedit
+    HKLM\SYSTEM\CurrentControlSet\Control\CI\Config\VulnerableDriverBlocklistEnable
+    Значение: 0
+    Перезагрузка.
+
+Без этого: kdmap вернёт STATUS_IMAGE_CERT_REVOKED (0xC0000603).
+
+HVCI / Memory Integrity (автофикс есть)
+----------------------------------------
+START.bat сам проставит:
+    HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity
+    Enabled = DWORD:0
+
+Альтернативно через UI:
+    Параметры -> Конфиденциальность и защита -> Безопасность Windows ->
+    Безопасность устройства -> Сведения об изоляции ядра ->
+    Целостность памяти = ВЫКЛ
+    Перезагрузка.
+
+Без этого: kernel-mode unsigned драйвер не загрузится.
+
+Secure Boot (только BIOS/UEFI)
+------------------------------
+Перезагрузись -> зайди в BIOS (обычно Del/F2/F10/F12):
+    Security -> Secure Boot Control -> Disabled
+    Save & Exit.
+
+preflight.bat покажет твоё текущее состояние и подсказку как зайти.
+
+AntiCheat (FACEIT, ESEA, Vanguard и т.д.)
+------------------------------------------
+Многие AC запущены даже когда игра закрыта! Это блокирует kdmapper.
+
+preflight.bat покажет список запущенных AC процессов. Завершить ВСЕ
+из них перед запуском. Для FACEIT - правый клик в трее -> Quit.
+
+Если AC отказывается выходить -> Task Manager -> завершить процессы:
+    faceitclient.exe, faceitservice.exe, ESEAClient.exe,
+    vgc.exe, vgtray.exe (Vanguard), и т.д.
+
+Windows Defender Real-Time Protection
+--------------------------------------
+В большинстве случаев не блокирует, но при ошибках 0xC0000022 / 0xC000009A:
+    Windows Security -> Защита от вирусов -> Управление настройками ->
+    Защита в реальном времени = ВЫКЛ
+(После запуска драйвера можно включить обратно.)
+
+
+================================================================
+5. ЕЖЕДНЕВНАЯ РАБОТА
+================================================================
+
+Запуск:        START.bat
+Остановка:     STOP.bat
+Перезагрузить
+без ребута:    STOP.bat -> START.bat только если STOP написал TRUE UNLOAD COMPLETE.
+               Если STOP просит reboot - сначала reboot.
+
+Если что-то странное -> запусти diag_collect.bat и пришли разработчику
+получившийся zip.
+
+
+================================================================
+6. ПОЛНАЯ ВЫГРУЗКА (без ребута)
+================================================================
+
+Реализована через kdunmap.exe который ЗАНОВО грузит iqvw64e.sys (тот же
+exploit что kdmap) и через него вызывает MmFreeIndependentPages на нашу
+allocation. Страницы возвращаются в NonPagedPool. Память драйвера полностью
+свободна.
+
+STOP.bat делает именно это безопасной последовательностью:
+  1) unload_f20.ps1 шлёт Global\F20DriverStop;
+  2) ждёт Global\F20DriverStopped или legacy clean-exit;
+  3) только после подтверждения запускает kdunmap --alreadyStopped.
+  4) чистит временное состояние F20Kit: analyzer/runtime значения
+     HKLM\SOFTWARE\F20Driver, безопасно очищает
+     HKLM\SOFTWARE\kdmap_tracker\F20Driver,
+     удаляет возможные сервисы F20Driver/iqvw64e.
+
+Результаты:
+  exit 0 -> "TRUE UNLOAD COMPLETE - kernel allocation freed."
+            Драйвер полностью удалён БЕЗ ребута.
+  нет live stop event -> stale tracker удаляется, blind free НЕ делается.
+  worker не подтвердил выход -> kdunmap НЕ запускается, нужен reboot.
+  другое -> kdunmap не смог -> reboot prompt.
+
+START.bat перед analyze_kbdclass.exe очищает только analyzer/runtime значения:
+CallbackRva/KbdTimestamp/KbdImageSize/KbdSha256/Signature. CS2 offsets заранее
+НЕ удаляются: если GitHub недоступен, остаются старые рабочие значения. Если
+скачивание и sanity-check успешны, update_cs2_offsets.ps1 перезаписывает
+registry свежими offsets. CallbackRva/KbdTimestamp/KbdImageSize/KbdSha256
+создаются заново под текущий kbdclass.sys, как при первом запуске.
+
+Важно: cleanup НЕ включает обратно HVCI/VulnerableDriverBlocklist и не трогает
+Secure Boot. Это системные политики; их откат может потребовать reboot и снова
+заблокировать kdmap.
+
+ПОЧЕМУ это надёжно (а раньше не было):
+  kdmap.exe пишет в HKLM\SOFTWARE\kdmap_tracker\F20Driver:
+      KernelBase     = 0xFFFFC78... (адрес allocation в ядре)
+      KernelSize     = 0x4000 (размер)
+      AllocationMode = "AllocateIndependentPages"
+      StopEventName  = "Global\F20DriverStop"
+  unload_f20.ps1 шлёт stop event, worker thread выходит из loop, освобождает
+  callbacks/handles и сигналит Global\F20DriverStopped. Только после этого
+  kdunmap грузит iqvw64e и через MmFreeIndependentPages освобождает страницы.
+
+
+================================================================
+7. ДИАГНОСТИКА BSOD
+================================================================
+
+Если БСОДнуло:
+  1. Запиши Stop code (на синем экране снизу).
+  2. На той же машине запусти diag_collect.bat (от админа).
+  3. Пришли разработчику получившийся f20_diag_*.zip - там:
+       - kbdclass.sys (бинарник, чтобы добавить sha256 в known-good DB)
+       - analyze_output.txt
+       - osinfo.txt (билд Windows)
+       - registry_state.txt
+       - bugcheck_events.txt (последние BSOD события из EventLog)
+       - minidumps_recent.txt (список последних дампов; сами дампы в
+         C:\Windows\Minidump\*.dmp - тоже приложить)
+
+Известные причины BSOD и текущая защита:
+  * Раньше: analyzer находил неверный RVA в kbdclass.sys, драйвер ему
+    доверял, вызывал чужой код на DISPATCH_LEVEL -> BSOD.
+    Сейчас: analyzer сначала берёт точный RVA из Microsoft PDB symbols.
+    Если PDB недоступен и используется legacy fallback, драйвер
+    дополнительно проверяет первые 64 байта по RVA против известных
+    сигнатур KeyboardClassServiceCallback. Если PDB/fallback не сработали
+    -> monitor-only mode, БСОДа не будет.
+
+Что увидишь в DbgView если защита сработала:
+    [F20Drv] Registry RVA 0xXXXX prologue doesn't match any KCSC signature - REJECT
+    [F20Drv] Driver will run in monitor-only mode (no inject, no BSOD)
+
+
+================================================================
+8. РАСПРОСТРАНЁННЫЕ ОШИБКИ (с автофиксами)
+================================================================
+
+ОШИБКА: kdmap: STATUS_IMAGE_CERT_REVOKED (0xC0000603)
+  ПРИЧИНА: VulnerableDriverBlocklist блокирует iqvw64e.sys
+  АВТОФИКС: preflight.bat -> "Disable VulnerableDriverBlocklist" -> Y
+  РУЧНОЙ ФИКС: см. раздел 4
+
+ОШИБКА: kdmap: 0xC0000022 или 0xC000009A
+  ПРИЧИНА: AntiCheat или антивирус блокирует
+  АВТОФИКС: preflight.bat -> покажет запущенные AC
+  РУЧНОЙ ФИКС: Task Manager -> закрыть AC процессы; если Defender -
+               отключить real-time protection
+
+ОШИБКА: "Device\Nal already in use"
+  ПРИЧИНА: предыдущий kdmap не успел выгрузить iqvw64e
+  АВТОФИКС: START.bat теперь сначала делает safe soft-stop, затем kdunmap
+            только если worker-exit подтверждён
+  РУЧНОЙ ФИКС: ребут (или вручную выгрузить iqvw64e через sc)
+
+ОШИБКА: drvf log "Inject DISABLED - could not resolve callback safely"
+  ПРИЧИНА: analyzer не нашёл PDB symbol или уникальную fallback-сигнатуру KCSC
+  АВТОФИКС: запусти diag_collect.bat, пришли zip разработчику
+  ВРЕМЕННО: F20-инжект отключен, но monitor работает (видно в DbgView)
+
+ОШИБКА: "Кили не триггерят F20"
+  ПРОВЕРКА 1: NumLock включён?
+  ПРОВЕРКА 2: unbind F20 пропись в CS2 console?
+  ПРОВЕРКА 3: в DbgView видно [F20Drv] KILL RK=...?
+              Если нет - reads_ok=FALSE, offsets устарели, см. раздел 10
+  ПРОВЕРКА 4: ты в матче (не в главном меню)?
+
+ОШИБКА: "Numpad нажимает но как стрелки/Home/End"
+  ПРИЧИНА: NumLock=OFF
+  ФИКС: нажми NumLock на клавиатуре, LED должен загореться
+
+ОШИБКА: "Numpad 0-9 вообще не нажимаются в игре"
+  ПРОВЕРКА 1: в DbgView есть строка KILL ... Num scan=... tap=55ms?
+              Если нет - kill не детектится или inject disabled.
+  ПРОВЕРКА 2: есть ли WARN "Inject scan=... consumed=0"?
+              Если да - kbdclass не принял событие, пришли весь DbgView лог.
+  ПРОВЕРКА 3: NumLock включён. Без NumLock эти scan codes превращаются в
+              Insert/Home/End/стрелки, а не в Numpad digits.
+
+ОШИБКА: BSOD при STOP.bat / kdunmap
+  ПРИЧИНА: free на ещё-используемую память (worker thread не успел выйти)
+  ФИКС: STOP.bat больше НЕ запускает kdunmap первым. Сначала ждёт
+        Global\F20DriverStopped, потом kdunmap --alreadyStopped.
+        Если worker не подтвердил выход - только reboot.
+        --skipWait использовать НЕЛЬЗЯ.
+
+
+================================================================
+9. ОТЛАДКА В DBGVIEW
+================================================================
+
+Скачай DebugView (Sysinternals):
+    https://download.sysinternals.com/files/DebugView.zip
+
+Запусти Dbgview.exe от админа. В меню:
+    Capture -> Capture Kernel = ENABLED
+    Capture -> Enable Verbose Kernel Output = ENABLED
+    Edit -> Filter -> Include: *F20Drv*
+
+Тогда увидишь все логи драйвера:
+  При старте:
+    [F20Drv] ======================================
+    [F20Drv]    F20Driver v8 (GitHub CS2 offsets + safe stop + hardened RNG/DACL)
+    [F20Drv] ======================================
+    [F20Drv] OS: 10.0 build 26200 (Win11)
+    [F20Drv] Found cs2.exe PID=0x1234 ... (когда CS2 запущен)
+    [F20Drv] kbdclass.sys at 0xFFFF... size 0x...
+    [F20Drv] .text: 0x... size 0x...  TS=0x... ImgSz=0x...
+    [F20Drv] Registry HIT: RVA=0xXXXX validated by PDB symbol
+    [F20Drv] Inject ENABLED: dev=... cb=...
+
+  На каждый kill:
+    [F20Drv] KILL RK=2->3  F20 hold=2500ms  Num scan=0x4F idx=1 tap=55ms
+    [F20Drv] F20 up   (через 2.5 сек)
+
+  При unload:
+    [F20Drv] WorkerThread cleanup
+    [F20Drv] ======= WorkerThread EXIT =======
+
+
+================================================================
+10. ВНУТРЕННЕЕ УСТРОЙСТВО
+================================================================
+
+CS2 offsets:
+    START.bat запускает update_cs2_offsets.ps1 до загрузки драйвера.
+    Скрипт скачивает:
+        https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/offsets.json
+        https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/client_dll.json
+    и пишет в HKLM\SOFTWARE\F20Driver:
+        Cs2DwLocalPlayerController
+        Cs2M_pActionTrackingServices
+        Cs2M_iNumRoundKills
+
+    Старые значения не удаляются до успешного скачивания и sanity-check.
+    Если GitHub недоступен, драйвер использует предыдущие registry offsets
+    или built-in fallback в F20Driver.sys.
+
+    Драйвер читает эти значения в DriverEntry. Если GitHub/registry недоступны
+    или sanity-check не прошёл, используется built-in fallback.
+
+Сборка драйвера:
+    msbuild MyDriver23\MyDriver2\F20Driver\F20Driver.vcxproj
+            /p:Configuration=Release /p:Platform=x64
+
+Сборка kdmap/kdunmap:
+    1. Сначала собрать kdmapper static lib:
+       msbuild kdmapper\kdmapper.sln /p:Configuration=lib-Release /p:Platform=x64
+            /t:kdmapper:Rebuild
+    2. Потом kdmap + kdunmap:
+       msbuild MyDriver23\kdmap_unmap\kdmap\kdmap.vcxproj
+            /p:Configuration=Release /p:Platform=x64
+       msbuild MyDriver23\kdmap_unmap\kdunmap\kdunmap.vcxproj
+            /p:Configuration=Release /p:Platform=x64
+
+Registry layout:
+    HKLM\SOFTWARE\F20Driver\
+        CallbackRva   REG_DWORD  - RVA KbdClassServiceCallback (от анализатора)
+        KbdTimestamp  REG_DWORD  - PE TimeDateStamp kbdclass.sys
+        KbdImageSize  REG_DWORD  - SizeOfImage kbdclass.sys
+        KbdSha256     REG_SZ     - sha256 файла (для сверки)
+        Signature     REG_SZ     - имя сигнатуры по которой нашлось
+        Cs2DwLocalPlayerController       REG_QWORD - dwLocalPlayerController
+        Cs2M_pActionTrackingServices     REG_DWORD - controller action services
+        Cs2M_iNumRoundKills              REG_DWORD - round kill counter
+        Cs2OffsetsSource                 REG_SZ    - источник offsets
+        Cs2OffsetsFetchedAtUtc           REG_SZ    - UTC-время скачивания
+
+    HKLM\SOFTWARE\kdmap_tracker\F20Driver\
+        KernelBase     REG_QWORD  - адрес выделения в ядре
+        KernelSize     REG_DWORD  - размер выделения
+        AllocationMode REG_SZ     - "AllocateIndependentPages"
+        StopEventName  REG_SZ     - "Global\F20DriverStop"
+        DriverPath     REG_SZ     - путь к .sys
+        MappedAt       REG_QWORD  - FILETIME загрузки
+
+Stop event:
+    \BaseNamedObjects\Global\F20DriverStop
+    Когда signal -> worker thread выходит из main loop, освобождает
+    kernel objects, ZwClose handle (event исчезает из object directory).

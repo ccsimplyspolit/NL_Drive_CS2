@@ -1,0 +1,351 @@
+================================================================
+              IsValveDS Spoofer - ПОЛНАЯ ИНСТРУКЦИЯ
+================================================================
+
+СОДЕРЖАНИЕ
+----------
+  1. ЧТО ЭТО И КАК РАБОТАЕТ
+  2. ТРЕБОВАНИЯ К СИСТЕМЕ
+  3. ПЕРВЫЙ ЗАПУСК - пошагово
+  4. ОТКЛЮЧЕНИЕ ПРЕПЯТСТВИЙ (HVCI, Secure Boot, AntiCheat)
+  5. ЕЖЕДНЕВНАЯ РАБОТА
+  6. ПОЛНАЯ ВЫГРУЗКА (без ребута)
+  7. ДИАГНОСТИКА BSOD
+  8. РАСПРОСТРАНЁННЫЕ ОШИБКИ (с автофиксами)
+  9. ОТЛАДКА В DBGVIEW + UI КОНСОЛИ
+  10. ВНУТРЕННЕЕ УСТРОЙСТВО (для разработчика)
+
+
+================================================================
+1. ЧТО ЭТО И КАК РАБОТАЕТ
+================================================================
+
+IsValveDS Spoofer - подмена флага CCSGameRules::m_bIsValveDS в cs2.exe.
+Состоит из ДВУХ частей:
+
+  1. IsValveDS_Driver.sys - kernel-mode драйвер (kdmapper-mapped).
+     - В worker-треде каждые 200 мс читает текущее значение
+       m_bIsValveDS через MmCopyVirtualMemory.
+     - Публикует в shared memory section.
+     - Обрабатывает write-запросы от консоли (записывает 0 или 1).
+
+  2. IsValveDS_Console.exe - usermode консоль.
+     - Открывает SHM по имени Global\IsValveDSState.
+     - Каждые 3 сек печатает текущее значение.
+     - Принимает команды: r (read), 0/1 (write), s (snapshot), stop, q.
+
+Архитектура (важно понимать)
+-----------------------------
+Драйвер НЕ создаёт IoCreateDevice / IoCreateSymbolicLink / IRP-dispatch.
+Это было бы BSOD-vector для kdmapper-mapped драйверов: kdmapper передаёт
+ВРЕМЕННЫЙ DRIVER_OBJECT в DriverEntry; после выхода из DriverEntry он
+освобождается. IoCreateDevice сохраняет на него back-pointer в DEVICE_OBJECT.
+Когда пришёл бы IRP - I/O Manager пошёл бы по этому back-pointer'у в уже
+освобождённую память -> BSOD.
+
+Поэтому общение через SHM section + named event:
+    \BaseNamedObjects\Global\IsValveDSState - 4 KB shared memory
+    \BaseNamedObjects\Global\IsValveDSStop  - notification event для unload
+    \BaseNamedObjects\Global\IsValveDSStopped - worker-exit done event
+
+Все обращения к cs2.exe - через MmCopyVirtualMemory, без KeStackAttachProcess.
+PASSIVE_LEVEL only, SEH-обёртки, IsAddrValid + PsGetProcessExitStatus
+проверки на каждой итерации.
+
+
+================================================================
+2. ТРЕБОВАНИЯ К СИСТЕМЕ
+================================================================
+
+Обязательно:
+  - Windows 10 x64 (1607+) или Windows 11 x64
+  - Права администратора (для kdmapper)
+  - Secure Boot ВЫКЛЮЧЕН
+  - VulnerableDriverBlocklist ВЫКЛЮЧЕН
+  - HVCI/Memory Integrity ВЫКЛЮЧЕН
+  - cs2.exe должен быть запущен (в матче, GameRules инициализирован)
+
+Не обязательно:
+  - Python НЕ нужен (этот проект чисто C++, в отличие от F20Kit)
+
+КАК ПРОВЕРИТЬ всё ли готово:
+  Запусти preflight.bat (от админа) - покажет статус и предложит автофиксы.
+
+
+================================================================
+3. ПЕРВЫЙ ЗАПУСК - пошагово
+================================================================
+
+Шаг 1. Подготовка системы (один раз)
+-------------------------------------
+1. Запусти preflight.bat (от админа). Применяй автофиксы.
+2. После [FIX] - перезагрузись.
+3. Secure Boot отключается только через BIOS/UEFI. preflight подскажет.
+
+Шаг 2. Первый запуск
+---------------------
+1. Запусти cs2.exe и ЗАЙДИ В МАТЧ (в главном меню GameRules == NULL,
+   драйвер увидит это и будет печатать "unavailable: GameRules NULL").
+2. Двойной клик: run.bat. Он сам:
+   a) запросит права администратора;
+   b) попробует "true unload" предыдущего инстанса (если был);
+   c) соберет pre-load diagnostics в bin\logs\diag_preload_*;
+   d) скачает свежие CS2 offsets с github:a2x/cs2-dumper;
+   e) загрузит IsValveDS_Driver.sys через kdmap.exe (--indPages, tracked);
+   f) запустит IsValveDS_Console.exe.
+3. В консоли увидишь раз в 3 сек строку вида:
+       [12:34:56] poll  value=0 @ 0x00007FF...  (tick=120 pid=12345)
+4. Чтобы записать значение - набери в консоли:
+       0 [Enter]   -> запишет 0
+       1 [Enter]   -> запишет 1
+       r [Enter]   -> форсированный read
+       h [Enter]   -> помощь
+       q [Enter]   -> выход из консоли (драйвер остаётся загружен)
+       stop [Enter] -> попросить драйвер отдать SHM/event
+
+
+================================================================
+4. ОТКЛЮЧЕНИЕ ПРЕПЯТСТВИЙ
+================================================================
+
+Те же действия что и в F20Kit (см. preflight.bat):
+
+VulnerableDriverBlocklist:
+    HKLM\SYSTEM\CurrentControlSet\Control\CI\Config
+    VulnerableDriverBlocklistEnable = DWORD:0  +  reboot
+
+HVCI (Memory Integrity):
+    HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity
+    Enabled = DWORD:0  +  reboot
+
+Secure Boot:
+    BIOS/UEFI -> Security -> Secure Boot -> Disabled
+
+AntiCheat: завершить процессы FACEIT/ESEA/Vanguard (если запущены)
+           через Task Manager перед run.bat.
+
+Defender Real-Time: при ошибках 0xC0000022 - временно отключить.
+
+
+================================================================
+5. ЕЖЕДНЕВНАЯ РАБОТА
+================================================================
+
+Запуск:        run.bat
+Остановка:     stop.bat
+Перезагрузить
+без ребута:    stop.bat -> run.bat  (kdunmap всё чистит)
+
+Менять значение:
+    В консоли набирай 0 или 1 и Enter. Драйвер перепроверит
+    указатель GameRules заново (на случай смены карты/сервера),
+    сравнит текущее с desired, и запишет только если отличается.
+    Печатает readback - то что РЕАЛЬНО в памяти после записи.
+
+
+================================================================
+6. ПОЛНАЯ ВЫГРУЗКА (без ребута)
+================================================================
+
+stop.bat делает true unload через kdunmap.exe:
+    exit 0 -> "TRUE UNLOAD COMPLETE" - kernel allocation освобождена.
+              Драйвер полностью удалён, ребут НЕ НУЖЕН.
+    exit 2 -> "не был загружен через kdmap" -> fallback на soft signal.
+    другое -> kdunmap не смог -> fallback + reboot если хочешь.
+
+kdunmap работает так:
+  1. Читает HKLM\SOFTWARE\kdmap_tracker\IsValveDS_Driver\{KernelBase,
+     KernelSize, AllocationMode, StopEventName}.
+  2. unload_isvalveds.ps1 шлёт SetEvent(Global\IsValveDSStop).
+  3. Драйвер выходит из worker loop, снимает process notify, закрывает
+     shared memory/events и сигналит Global\IsValveDSStopped.
+  4. Только после подтверждённого Stopped запускается:
+        kdunmap.exe --key IsValveDS_Driver --alreadyStopped
+  5. kdunmap грузит iqvw64e.sys (тот же exploit что kdmap использовал).
+  6. Вызывает MmFreeIndependentPages(KernelBase, KernelSize) в ядре.
+  7. Выгружает iqvw64e.
+  8. Удаляет запись в HKLM\SOFTWARE\kdmap_tracker.
+
+
+================================================================
+7. ДИАГНОСТИКА BSOD
+================================================================
+
+Если БСОДнуло:
+  1. Запиши Stop code (на синем экране снизу).
+  2. Смотри последние сообщения [IsVDS] в DbgView - скорее всего там
+     будет видно на каком этапе упало.
+  3. Минидамп в C:\Windows\Minidump\*.dmp - открой WinDbg, рядом
+     положи IsValveDS_Driver.pdb из bin/, символы подгрузятся
+     автоматически. !analyze -v покажет где именно сломалось.
+
+Известные защиты в этом драйвере (чтобы не БСОДить):
+  * MmCopyVirtualMemory вместо KeStackAttachProcess (исключает APC issues).
+  * IsAddrValid + PsGetProcessExitStatus перед каждым чтением.
+  * ProcessExitCallback ставит флаг при выходе cs2.exe -> следующие read
+    дропаются.
+  * SEH (__try/__except) вокруг всех PEB walk и кросс-процессных reads.
+  * PASSIVE_LEVEL only.
+  * Memory barriers + magic-pattern на SHM.
+
+
+================================================================
+8. РАСПРОСТРАНЁННЫЕ ОШИБКИ (с автофиксами)
+================================================================
+
+ОШИБКА: kdmap: STATUS_IMAGE_CERT_REVOKED (0xC0000603)
+  ПРИЧИНА: VulnerableDriverBlocklist
+  АВТОФИКС: preflight.bat -> [3/6] -> Y
+
+ОШИБКА: kdmap: 0xC0000022 / 0xC000009A
+  ПРИЧИНА: AntiCheat или антивирус
+  ФИКС: завершить AC процессы (preflight покажет какие); отключить
+        Defender Real-Time если совсем тяжело
+
+ОШИБКА: "Device\Nal already in use"
+  ПРИЧИНА: предыдущий iqvw64e не выгрузился
+  АВТОФИКС: preflight.bat -> [5/6] -> Y
+
+ОШИБКА: консоль "Cannot open SHM" (GetLastError=2)
+  ПРИЧИНА: драйвер не загружен или SHM ещё не создан
+  ФИКС: подожди 2-3 сек после kdmap; если не помогает - перезапусти run.bat
+
+ОШИБКА: poll показывает "unavailable: GameRules NULL"
+  ПРИЧИНА: ты в главном меню или disconnected
+  ФИКС: зайди в матч (warmup/practice/online - любой режим где есть раунд)
+
+ОШИБКА: poll показывает "unavailable: cs2.exe not running"
+  ФИКС: запусти cs2.exe
+
+ОШИБКА: записал 1, а poll показывает 0 (значение не сохраняется)
+  ПРИЧИНА: игра постоянно перезаписывает это поле (нормально для некоторых
+           серверов / режимов). Драйвер показывает в логе "wrote N, but
+           readback shows M (game may overwrite it)".
+  ФИКС: периодически жми 1 заново. Или измени POLL_INTERVAL_MS в драйвере
+        чтобы он сам поддерживал значение (требует пересборки).
+
+ОШИБКА: BSOD при stop.bat
+  ПРИЧИНА: free на ещё-используемую память (race с worker thread)
+  ФИКС: новый stop.bat ждёт Global\IsValveDSStopped и запускает
+        kdunmap.exe --alreadyStopped только после cleanup. Если всё равно BSOD -
+        пришли mini dump + bin\logs\stop_* разработчику.
+
+
+================================================================
+9. ОТЛАДКА В DBGVIEW + UI КОНСОЛИ
+================================================================
+
+DbgView (Sysinternals):
+    Capture -> Capture Kernel = ON
+    Edit -> Filter -> Include: *IsVDS*
+
+Что увидишь при старте:
+    [IsVDS] ======================================
+    [IsVDS] IsValveDS_Driver  (SHM-based, no IRP)
+    [IsVDS] offsets source = registry
+    [IsVDS] dwGameRules    = 0x2341158
+    [IsVDS] m_bIsValveDS   = 0xA4
+    [IsVDS] SHM ready
+    [IsVDS] Unload event ready
+    [IsVDS] ProcessExitCallback registered
+    [IsVDS] Driver loaded
+
+Когда cs2 в матче:
+    [IsVDS] Found cs2.exe PID=...
+    [IsVDS] client.dll=0x...
+    (потом ничего не печатает, polling раз в 200 мс молча)
+
+На write:
+    [IsVDS] Write request id=1 desired=1
+    [IsVDS] Write skipped: already=1     (если уже совпадает)
+
+При unload:
+    [IsVDS] WorkerThread cleanup
+    [IsVDS] ======= WorkerThread EXIT =======
+
+UI консоли (IsValveDS_Console.exe):
+    [poll  ] - регулярный опрос без изменения
+    [poll *] - значение изменилось с прошлого опроса
+    [read  ] - результат команды r
+    [write ] - результат команды 0/1
+    [snap  ] - результат команды s
+
+
+================================================================
+10. ВНУТРЕННЕЕ УСТРОЙСТВО
+================================================================
+
+CS2 offsets:
+    run.bat перед загрузкой драйвера запускает:
+        bin\update_isvalveds_offsets.ps1
+
+    Скрипт скачивает:
+        https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/offsets.json
+        https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/client_dll.json
+
+    И пишет в HKLM\SOFTWARE\IsValveDS:
+        Cs2DwGameRules       REG_QWORD
+        Cs2M_bIsValveDS      REG_DWORD
+        Cs2OffsetsSource     REG_SZ
+        Cs2OffsetsFetchedAtUtc REG_SZ
+
+    Драйвер читает registry в DriverEntry. Если GitHub недоступен,
+    registry пустой или sanity-check не прошел, используются fallback:
+        client.dll!dwGameRules        = 0x2341158
+        CCSGameRules::m_bIsValveDS    = 0xA4
+
+    Ручная правка OFF_* в main.cpp для обычных обновлений CS2 больше не нужна.
+
+Сборка драйвера (нужен установленный WDK):
+    msbuild "isvalveDS spoofer\IsValveDS_Driver\IsValveDS_Driver.vcxproj"
+            /p:Configuration=Release /p:Platform=x64
+
+Сборка консоли:
+    msbuild "isvalveDS spoofer\IsValveDS_Console\IsValveDS_Console.vcxproj"
+            /p:Configuration=Release /p:Platform=x64
+
+Протокол SHM:
+    struct ISVALVEDS_STATE {
+        uint32 magic;                  // ISVALVEDS_MAGIC когда валидно
+        int32  current_value;          // 0/1 или -1
+        uint32 current_error;          // VDS_ERR_*
+        uint64 current_address;        // абс. адрес m_bIsValveDS
+        uint64 last_poll_systime;
+        uint32 driver_tick;
+        uint32 cs2_pid;
+        uint64 client_base;
+
+        uint32 desired_value;          // <- пишет user
+        uint32 write_request_id;       // <- пишет user (инкремент = "запиши")
+
+        uint32 write_handled_id;       // <- пишет драйвер (== request_id когда сделано)
+        uint32 write_error;            // VDS_ERR_* для последней записи
+        int32  write_result_value;     // readback после записи
+        uint64 write_handled_systime;
+    };
+
+Registry layout:
+    HKLM\SOFTWARE\IsValveDS\
+        Cs2DwGameRules      REG_QWORD - client.dll!dwGameRules из cs2-dumper
+        Cs2M_bIsValveDS     REG_DWORD - C_CSGameRules::m_bIsValveDS
+        Cs2OffsetsSource    REG_SZ    - URL источников offsets
+        Cs2OffsetsFetchedAtUtc REG_SZ  - время успешного обновления
+
+    HKLM\SOFTWARE\kdmap_tracker\IsValveDS_Driver\
+        KernelBase     REG_QWORD  - адрес выделения в ядре
+        KernelSize     REG_DWORD  - размер выделения
+        AllocationMode REG_SZ     - "AllocateIndependentPages"
+        StopEventName  REG_SZ     - "Global\IsValveDSStop"
+        DriverPath     REG_SZ     - путь к .sys
+        MappedAt       REG_QWORD  - FILETIME загрузки
+
+Stop event:
+    \BaseNamedObjects\Global\IsValveDSStop
+    Когда signal -> worker thread выходит из main loop, освобождает
+    section + event + callback, ZwClose все handle'ы.
+
+Done event:
+    \BaseNamedObjects\Global\IsValveDSStopped
+    Драйвер сигналит его после cleanup. stop.bat/run.bat запускают kdunmap
+    только после этого подтверждения; если подтверждения нет, они не трогают
+    live allocation и предлагают reboot.

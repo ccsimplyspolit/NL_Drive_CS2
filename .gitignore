@@ -1,0 +1,55 @@
+# Visual Studio / WDK build output
+.vs/
+Debug/
+Release/
+x64/
+Win32/
+ARM64/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.tlog/
+*.obj
+*.pch
+*.pdb
+*.ilk
+*.idb
+*.exp
+*.lib
+*.log
+
+# Runtime diagnostics and crash artifacts
+logs/
+**/logs/
+diag_preload_*/
+stop_*/
+START_LAST.log
+*.dmp
+*.mdmp
+*.etl
+
+# Generated packages and binary artifacts
+*.zip
+*.rar
+*.7z
+*.sys
+*.exe
+*.dll
+*.vsnd_c
+
+# NuGet / local dependency folders
+packages/
+**/packages/
+
+# cs2-dumper generated output/cache
+output/
+**/output/
+offsets_cache/
+**/offsets_cache/
+cs2-dumper*
+
+# Local scratch / unrelated large workspace artifacts
+_pack_*/
+*.tmp
+*.bak
