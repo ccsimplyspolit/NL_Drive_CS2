@@ -37,6 +37,9 @@ F20Kit - kernel-mode CS2 round-kill detector (headless)
   - Windows 10/11 x64
   - Secure Boot OFF (отключается только через BIOS, START.bat предупредит)
   - Python НЕ нужен - analyze_kbdclass.exe нативный C++
+  - VC++ runtime обычно НЕ нужно ставить вручную: DLL кладутся рядом с exe.
+    Если DLL удалены/заблокированы, START.bat спросит и запустит
+    install_vcredist.bat.
 
 Файлы в папке
 -------------
@@ -56,6 +59,7 @@ F20Kit - kernel-mode CS2 round-kill detector (headless)
                          из a2x/cs2-dumper, пишет CS2 offsets в registry
   preflight.bat        - read-only диагностика (без авто-фиксов)
   unload_f20.ps1       - legacy PS1, soft signal Global\F20DriverStop
+  install_vcredist.bat - установка VC++ runtime по запросу (Microsoft или AIO)
   diag_collect.bat     - сборщик диагностики (см. ниже)
   README.txt           - этот файл
   ИНСТРУКЦИЯ.txt       - подробная русская инструкция

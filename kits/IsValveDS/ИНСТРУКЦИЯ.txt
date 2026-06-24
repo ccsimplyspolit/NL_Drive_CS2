@@ -44,9 +44,12 @@ IsValveDS Spoofer - подмена флага CCSGameRules::m_bIsValveDS в cs2.
 освобождённую память -> BSOD.
 
 Поэтому общение через SHM section + named event:
-    \BaseNamedObjects\Global\IsValveDSState - 4 KB shared memory
-    \BaseNamedObjects\Global\IsValveDSStop  - notification event для unload
-    \BaseNamedObjects\Global\IsValveDSStopped - worker-exit done event
+    \BaseNamedObjects\IsValveDSState - 4 KB shared memory
+    \BaseNamedObjects\IsValveDSStop  - notification event для unload
+    \BaseNamedObjects\IsValveDSStopped - worker-exit done event
+
+  Win32-имена Global\IsValveDS* мапятся в эти же kernel objects без
+  дополнительного компонента Global в kernel path.
 
 Все обращения к cs2.exe - через MmCopyVirtualMemory, без KeStackAttachProcess.
 PASSIVE_LEVEL only, SEH-обёртки, IsAddrValid + PsGetProcessExitStatus
@@ -343,12 +346,12 @@ Registry layout:
         MappedAt       REG_QWORD  - FILETIME загрузки
 
 Stop event:
-    \BaseNamedObjects\Global\IsValveDSStop
+    \BaseNamedObjects\IsValveDSStop
     Когда signal -> worker thread выходит из main loop, освобождает
     section + event + callback, ZwClose все handle'ы.
 
 Done event:
-    \BaseNamedObjects\Global\IsValveDSStopped
+    \BaseNamedObjects\IsValveDSStopped
     Драйвер сигналит его после cleanup. stop.bat/run.bat запускают kdunmap
     только после этого подтверждения; если подтверждения нет, они не трогают
     live allocation и предлагают reboot.

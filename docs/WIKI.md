@@ -204,7 +204,27 @@ Safe unload flow:
 kdunmap.exe --key IsValveDS_Driver --alreadyStopped
 ```
 
-### 9. Сборка из исходников
+### 9. VC++ runtime
+
+В release-zip уже кладутся app-local DLL рядом с `kdmap.exe`/`kdunmap.exe`:
+
+- `msvcp140.dll`;
+- `vcruntime140.dll`;
+- `vcruntime140_1.dll`;
+- `concrt140.dll`.
+
+Если эти DLL удалены или заблокированы антивирусом, `START.bat` / `run.bat`
+спросят перед установкой VC++ runtime.
+
+`install_vcredist.bat` предлагает два режима:
+
+- официальный Microsoft VC++ 2015-2022 x64 Redistributable;
+- VisualCppRedist AIO latest от `abbodi1406/vcredist`, скачивается с GitHub
+  только по выбору пользователя и запускается с CLI `/y`.
+
+В репозитории не хранится сторонний vcredist `.exe`.
+
+### 10. Сборка из исходников
 
 Требования:
 
@@ -212,6 +232,7 @@ kdunmap.exe --key IsValveDS_Driver --alreadyStopped
 - Windows SDK/WDK 10.0.26100.x.
 - PowerShell 5+.
 - NuGet WDK/SDK packages.
+- `TheCruZ/kdmapper`, checkout рядом с репозиторием как `..\kdmapper`.
 
 Одна команда из корня репозитория:
 
@@ -233,7 +254,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1
 Если packages лежат не в `packages\`, можно передать MSBuild property
 `RepoPackagesDir` при ручной сборке проекта.
 
-### 10. Winbindex
+### 11. GitHub Actions / релизы
+
+Workflow `.github/workflows/build-release.yml` делает то же самое на GitHub:
+
+- восстанавливает WDK/SDK NuGet packages;
+- клонирует и собирает `TheCruZ/kdmapper` как static lib;
+- собирает драйверы, tools и консоль;
+- пересобирает `F20Kit.zip` и `IsValveDS_spoofer.zip`;
+- публикует artifacts на обычных builds;
+- прикрепляет zip к GitHub Release при push tag `v*` или manual run с
+  `publish_release=true`.
+
+Новый релиз через git:
+
+```powershell
+git tag v2
+git push origin v2
+```
+
+### 12. Winbindex
 
 Winbindex не нужен на runtime path. Он полезен только разработчику для offline
 regression tests множества версий `kbdclass.sys`.
@@ -244,7 +284,7 @@ Developer helper:
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\kbdclass\bulk_extract_kbdclass.ps1
 ```
 
-### 11. Что присылать при проблемах
+### 13. Что присылать при проблемах
 
 Для F20:
 
@@ -262,7 +302,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\kbdclass\bulk_extract_
 - DebugView log с filter `*IsVDS*`;
 - minidump, если был BSOD.
 
-### 12. Частые ошибки
+### 14. Частые ошибки
 
 `STATUS_IMAGE_CERT_REVOKED / 0xC0000603`
 VulnerableDriverBlocklist блокирует `iqvw64e`. Запусти `preflight.bat`, примени fix и reboot.
@@ -481,7 +521,28 @@ Safe unload flow:
 kdunmap.exe --key IsValveDS_Driver --alreadyStopped
 ```
 
-### 9. Building from source
+### 9. VC++ Runtime
+
+Release zip files already include app-local DLLs next to `kdmap.exe` /
+`kdunmap.exe`:
+
+- `msvcp140.dll`;
+- `vcruntime140.dll`;
+- `vcruntime140_1.dll`;
+- `concrt140.dll`.
+
+If those DLLs are deleted or quarantined, `START.bat` / `run.bat` will ask
+before installing a VC++ runtime.
+
+`install_vcredist.bat` offers two modes:
+
+- official Microsoft VC++ 2015-2022 x64 Redistributable;
+- latest VisualCppRedist AIO from `abbodi1406/vcredist`, downloaded from GitHub
+  only after user selection and launched with CLI `/y`.
+
+No third-party vcredist `.exe` is stored in this repository.
+
+### 10. Building from source
 
 Requirements:
 
@@ -489,6 +550,7 @@ Requirements:
 - Windows SDK/WDK 10.0.26100.x.
 - PowerShell 5+.
 - NuGet WDK/SDK packages.
+- `TheCruZ/kdmapper`, checked out next to this repository as `..\kdmapper`.
 
 Run from repository root:
 
@@ -510,7 +572,26 @@ The script:
 If packages are not under `packages\`, pass the MSBuild property
 `RepoPackagesDir` when building projects manually.
 
-### 10. Winbindex
+### 11. GitHub Actions / releases
+
+`.github/workflows/build-release.yml` performs the same build on GitHub:
+
+- restores WDK/SDK NuGet packages;
+- clones and builds `TheCruZ/kdmapper` as a static library;
+- builds the drivers, tools, and console;
+- rebuilds `F20Kit.zip` and `IsValveDS_spoofer.zip`;
+- uploads artifacts for normal builds;
+- attaches zip files to a GitHub Release on `v*` tag pushes or manual runs with
+  `publish_release=true`.
+
+Publish a new release from git:
+
+```powershell
+git tag v2
+git push origin v2
+```
+
+### 12. Winbindex
 
 Winbindex is not required at runtime. It is only useful for developer-side
 offline regression testing across many `kbdclass.sys` versions.
@@ -521,7 +602,7 @@ Developer helper:
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\kbdclass\bulk_extract_kbdclass.ps1
 ```
 
-### 11. What to send when something breaks
+### 13. What to send when something breaks
 
 For F20:
 
@@ -539,7 +620,7 @@ For IsValveDS:
 - DebugView log with `*IsVDS*`;
 - minidump if there was a BSOD.
 
-### 12. Common errors
+### 14. Common errors
 
 `STATUS_IMAGE_CERT_REVOKED / 0xC0000603`
 `iqvw64e` is blocked by VulnerableDriverBlocklist. Run `preflight.bat`, apply the fix, and reboot.

@@ -9,10 +9,28 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $msbuildCandidates = @(
+    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
+    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
     "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
-    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 )
-$msbuild = $msbuildCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+$msbuild = $null
+foreach ($candidate in $msbuildCandidates) {
+    if (-not (Test-Path -LiteralPath $candidate)) {
+        continue
+    }
+    if ((Split-Path -Leaf $candidate) -ieq 'vswhere.exe') {
+        $found = & $candidate -latest -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe' | Select-Object -First 1
+        if ($found -and (Test-Path -LiteralPath $found)) {
+            $msbuild = $found
+            break
+        }
+    } else {
+        $msbuild = $candidate
+        break
+    }
+}
 if (-not $msbuild) {
     throw 'MSBuild.exe not found. Install Visual Studio 2022 + WDK, or run from a Developer PowerShell.'
 }

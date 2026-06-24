@@ -1,109 +1,166 @@
 # NL_Drive_CS2
 
-Набор из двух kernel-mode проектов для CS2 с безопасным запуском/остановкой,
-pre-load диагностикой и автоматическим обновлением нужных offsets.
+![Build and Release](https://github.com/ccsimplyspolit/NL_Drive_CS2/actions/workflows/build-release.yml/badge.svg)
 
-## Wiki / Instructions
+![NL_Drive_CS2 hero](docs/assets/readme-hero.png)
 
-- [RU] Полная инструкция: [docs/WIKI.md#ru-полная-инструкция](docs/WIKI.md#ru-полная-инструкция)
-- [EN] Full guide: [docs/WIKI.md#en-full-guide](docs/WIKI.md#en-full-guide)
+> [RU] Используй только последний GitHub Release. Старые версии оставлены для истории и сравнения.
+> [EN] Always use the latest GitHub Release. Previous versions are kept only for reference.
 
-## Структура
+## Download
+
+- Latest release: https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest
+- Full RU guide: [docs/WIKI.md#ru-полная-инструкция](docs/WIKI.md#ru-полная-инструкция)
+- Full EN guide: [docs/WIKI.md#en-full-guide](docs/WIKI.md#en-full-guide)
+- GitHub Wiki: https://github.com/ccsimplyspolit/NL_Drive_CS2/wiki
+
+Release assets:
+
+- `F20Kit.zip` - F20 + random numpad event kit.
+- `IsValveDS_spoofer.zip` - `m_bIsValveDS` kernel spoofer kit.
+
+## What It Does
+
+`NL_Drive_CS2` contains two ready-to-run Windows x64 kernel-mode kits plus the
+source code, build scripts, diagnostics, and GitHub Actions workflow used to
+produce the release zip files.
+
+`F20Kit` monitors `cs2.exe` round-kill state from kernel mode. On every new kill
+it sends a 2.5 second F20 hold and one random Numpad 0-9 tap through
+`kbdclass!KeyboardClassServiceCallback`. The callback RVA is resolved through
+Microsoft PDB symbols first; byte-pattern matching is only a fallback.
+
+`IsValveDS` exposes `C_CSGameRules::m_bIsValveDS` through a shared-memory console.
+The driver re-resolves `cs2.exe`, `client.dll`, `dwGameRules`, and the target
+field during runtime, then reads/writes through `MmCopyVirtualMemory`.
+
+## Quick Start
+
+1. Open the latest release and download the needed zip.
+2. Extract the zip to a short local path, for example `C:\NL_Drive_CS2\F20Kit`.
+3. Run the launcher as Administrator:
+   - F20Kit: `START.bat`
+   - IsValveDS: `bin\run.bat`
+4. If the launcher reports missing VC++ runtime DLLs, accept the prompt or run
+   `install_vcredist.bat` manually.
+5. For F20Kit, open the CS2 console and run:
+
+```text
+unbind F20
+```
+
+NumLock must be ON if you use the Numpad 0-9 path.
+
+## Stop / Cleanup
+
+- F20Kit: run `STOP.bat`.
+- IsValveDS: run `bin\stop.bat`.
+
+Both kits use a soft stop event, wait for the driver's done event, then run
+tracked `kdunmap.exe --alreadyStopped`. If the driver does not confirm worker
+exit, the scripts refuse blind unmap and ask for reboot instead.
+
+## Event Names
+
+The event names are intentionally mirrored between kernel mode and Win32:
+
+| Kit | Kernel object | Win32 name | Purpose |
+| --- | --- | --- | --- |
+| F20Kit | `\BaseNamedObjects\F20DriverStop` | `Global\F20DriverStop` | request worker stop |
+| F20Kit | `\BaseNamedObjects\F20DriverStopped` | `Global\F20DriverStopped` | cleanup finished |
+| IsValveDS | `\BaseNamedObjects\IsValveDSState` | `Global\IsValveDSState` | shared memory |
+| IsValveDS | `\BaseNamedObjects\IsValveDSStop` | `Global\IsValveDSStop` | request worker stop |
+| IsValveDS | `\BaseNamedObjects\IsValveDSStopped` | `Global\IsValveDSStopped` | cleanup finished |
+
+Win32 `Global\Name` resolves to `\BaseNamedObjects\Name`; the kernel code creates
+the direct `\BaseNamedObjects\Name` form to work reliably on hardened Windows
+builds where `\BaseNamedObjects\Global` symlink behavior may differ.
+
+## VC++ Runtime
+
+The release kits include app-local VC++ runtime DLLs for `kdmap.exe` and
+`kdunmap.exe`. If those DLLs are deleted or quarantined, `START.bat` / `run.bat`
+will ask before installing a runtime.
+
+`install_vcredist.bat` supports two choices:
+
+- Microsoft VC++ 2015-2022 x64 Redistributable, official permalink.
+- VisualCppRedist AIO latest release from `abbodi1406/vcredist`, installed with
+  its documented `/y` CLI switch.
+
+No third-party installer is stored in this repository.
+
+## Repository Layout
 
 ```text
 NL_Drive_CS2/
   src/
     drivers/
-      F20Driver/          # kernel driver для F20 inject
-      IsValveDS/          # kernel driver для m_bIsValveDS
+      F20Driver/          kernel driver for F20 injection
+      IsValveDS/          kernel driver for m_bIsValveDS
     apps/
-      IsValveDSConsole/   # user console для IsValveDS shared memory
+      IsValveDSConsole/   shared-memory console
     tools/
-      analyze_kbdclass/   # PDB-based kbdclass analyzer
-      kdmap/              # tracked mapper
-      kdunmap/            # tracked unmapper
+      analyze_kbdclass/   PDB-based kbdclass analyzer
+      kdmap/              tracked mapper wrapper
+      kdunmap/            tracked unmapper wrapper
       common.h
   kits/
-    F20Kit/               # готовый runtime kit для F20
-    IsValveDS/            # готовый runtime kit для IsValveDS
+    F20Kit/               runtime kit layout
+    IsValveDS/            runtime kit layout
   tools/
-    kbdclass/             # developer-only bulk tests/helpers
+    kbdclass/             developer-only regression helpers
   scripts/
-    build_release.ps1     # build + sync binaries + package zip
+    build_release.ps1     local build + sync + zip
+  .github/workflows/
+    build-release.yml     CI build + release publishing
 ```
 
-## Проекты
+## Build Locally
 
-### F20Kit / F20Driver
-
-`F20Driver` следит за `m_iNumRoundKills` в `cs2.exe` и при новом kill
-инжектит F20 через `kbdclass!KeyboardClassServiceCallback`.
-
-Ключевые вещи:
-
-- `kits\F20Kit\START.bat` собирает diagnostics до загрузки драйвера и оставляет окно
-  открытым при ошибке.
-- `analyze_kbdclass.exe` сначала ищет `KeyboardClassServiceCallback` через
-  Microsoft PDB symbols. Pattern scan оставлен только fallback.
-- `update_cs2_offsets.ps1` скачивает свежие offsets из
-  `a2x/cs2-dumper` и пишет их в `HKLM\SOFTWARE\F20Driver`.
-- `STOP.bat` и повторный `START.bat` сначала ждут
-  `Global\F20DriverStopped`, потом вызывают
-  `kdunmap.exe --key F20Driver --alreadyStopped`.
-- В CS2 console нужно написать: `unbind F20`.
-
-### IsValveDS spoofer
-
-`IsValveDS_Driver` читает/пишет `C_CSGameRules::m_bIsValveDS` из ядра.
-`IsValveDS_Console.exe` общается с драйвером через named section/events.
-
-Ключевые вещи:
-
-- `kits\IsValveDS\bin\run.bat` собирает pre-load diagnostics, обновляет offsets и грузит
-  драйвер через tracked `kdmap.exe`.
-- `update_isvalveds_offsets.ps1` скачивает `dwGameRules` и `m_bIsValveDS`
-  из `a2x/cs2-dumper` в `HKLM\SOFTWARE\IsValveDS`.
-- `stop.bat`/`unload_isvalveds.ps1` сигналят `Global\IsValveDSStop`,
-  ждут `Global\IsValveDSStopped`, затем запускают
-  `kdunmap.exe --key IsValveDS_Driver --alreadyStopped`.
-- Старый one-shot mapper не нужен для штатного запуска.
-
-## Winbindex
-
-Winbindex полезен как developer-only источник разных версий `kbdclass.sys` для
-offline regression tests и расширения fallback hash/signature базы. Runtime
-зависимости от Winbindex нет: правильный путь для F20 - PDB lookup через
-Microsoft Symbol Server по debug directory конкретного `kbdclass.sys`.
-
-## Сборка
-
-Требования:
+Requirements:
 
 - Visual Studio 2022
-- Windows Driver Kit / SDK 10.0.26100.x
+- WDK / SDK 10.0.26100.x, restored through NuGet packages
 - PowerShell 5+
-- Для запуска: админ-права, Secure Boot off, совместимые CI/HVCI настройки
+- `TheCruZ/kdmapper` checked out next to this repository as `..\kdmapper`
 
-Одна команда собирает всё, синхронизирует бинарники в kits и пересобирает zip:
+Build all projects and recreate both release zip files:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1
 ```
 
-Проекты используют NuGet WDK/SDK packages. Скрипт поддерживает текущий локальный
-fallback `MyDriver2\packages\`, но для чистого clone лучше восстановить packages
-в `packages\` или передать MSBuild property `RepoPackagesDir`.
-
-Готовые локальные пакеты:
+Local outputs:
 
 - `kits\F20Kit\F20Kit.zip`
 - `kits\IsValveDS\IsValveDS_spoofer.zip`
 
-## Диагностика
+## GitHub Actions
 
-При запуске bat-файлы складывают диагностику в:
+`.github/workflows/build-release.yml` builds on Windows Server 2022:
 
-- `kits\F20Kit\logs\diag_preload_*`
-- `kits\IsValveDS\bin\logs\diag_preload_*`
+- restores WDK / SDK NuGet packages;
+- clones and builds the `kdmapper` static library;
+- builds all drivers/tools/consoles;
+- packages `F20Kit.zip` and `IsValveDS_spoofer.zip`;
+- uploads workflow artifacts on every main/PR build;
+- publishes release assets automatically for `v*` tags or manual runs with
+  `publish_release=true`.
 
-В zip и git эти runtime logs не добавляются.
+To publish a new release from git:
+
+```powershell
+git tag v2
+git push origin v2
+```
+
+## Diagnostics
+
+Launchers collect pre-load diagnostics before mapping any driver:
+
+- `F20Kit\logs\diag_preload_*`
+- `IsValveDS\bin\logs\diag_preload_*`
+
+For bug reports, send the latest launcher log, the matching `diag_preload_*`
+folder or zip, DebugView output, and the latest minidump if a BSOD occurred.

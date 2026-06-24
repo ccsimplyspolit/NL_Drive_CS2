@@ -3,8 +3,10 @@
 //
 // kdmapper-style manual map (no DriverUnload, no IoCreateDevice, no IRP).
 // Communicates with the user-mode console via:
-//   - shared memory section (\BaseNamedObjects\Global\IsValveDSState)
-//   - notification event    (\BaseNamedObjects\Global\IsValveDSStop)
+//   - shared memory section (\BaseNamedObjects\IsValveDSState)
+//   - notification event    (\BaseNamedObjects\IsValveDSStop)
+//   - done event            (\BaseNamedObjects\IsValveDSStopped)
+// User-mode opens the same objects as Global\IsValveDS*.
 //
 // Re-resolves cs2.exe / client.dll / CCSGameRules pointer every iteration,
 // because all of them can change at runtime:

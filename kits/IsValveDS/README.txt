@@ -65,6 +65,11 @@ Live-resync
       update_isvalveds_offsets.ps1
                                - скачивает dwGameRules + m_bIsValveDS и пишет
                                  их в HKLM\SOFTWARE\IsValveDS перед загрузкой
+      install_vcredist.bat     - установка VC++ runtime по запросу
+                                 (Microsoft или VisualCppRedist AIO)
+
+VC++ runtime обычно НЕ нужно ставить вручную: DLL кладутся рядом с exe. Если
+они удалены или заблокированы, run.bat спросит и запустит install_vcredist.bat.
 
 Оффсеты
 -------

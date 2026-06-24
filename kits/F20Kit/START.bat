@@ -108,6 +108,41 @@ mkdir "%DIAGROOT%" 2>nul
 mkdir "%DBGDIR%" 2>nul
 
 REM ============================================================
+REM AUTO-FIX 3.5: VC++ runtime prompt (only if app-local + System32 are missing)
+REM ============================================================
+set CRT_OK=1
+for %%D in (msvcp140.dll vcruntime140.dll vcruntime140_1.dll concrt140.dll) do (
+    if not exist "%~dp0%%D" if not exist "%SystemRoot%\System32\%%D" set CRT_OK=0
+)
+if "%CRT_OK%"=="0" (
+    echo.
+    echo [!] VC++ runtime DLLs are missing. kdmap/kdunmap may close instantly.
+    echo     Expected app-local DLLs next to START.bat or system-wide VC++ Redist.
+    echo.
+    choice /C YN /N /M "Install VC++ Redistributable now? [Y/N]: "
+    if errorlevel 2 (
+        echo User declined VC++ runtime install. >> "%START_BOOT_LOG%" 2>&1
+        echo [!] Cannot continue without VC++ runtime.
+        pause
+        exit /b 1
+    )
+    if not exist "%~dp0install_vcredist.bat" (
+        echo [!] install_vcredist.bat is missing.
+        echo install_vcredist.bat missing >> "%START_BOOT_LOG%" 2>&1
+        pause
+        exit /b 1
+    )
+    call "%~dp0install_vcredist.bat"
+    set VCRC=!errorlevel!
+    echo VC++ install rc=!VCRC! >> "%START_BOOT_LOG%" 2>&1
+    if not "!VCRC!"=="0" (
+        echo [!] VC++ runtime install failed or was cancelled ^(!VCRC!^).
+        pause
+        exit /b 1
+    )
+)
+
+REM ============================================================
 REM AUTO-FIX 4: Kill running AntiCheat processes (silent)
 REM ============================================================
 for %%P in (vgc.exe vgtray.exe faceitclient.exe faceitservice.exe ESEAClient.exe EasyAntiCheat.exe BEService.exe BEServiceCS2.exe ricochet.exe) do (

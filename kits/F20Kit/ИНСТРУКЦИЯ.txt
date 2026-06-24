@@ -392,6 +392,9 @@ Registry layout:
         MappedAt       REG_QWORD  - FILETIME загрузки
 
 Stop event:
-    \BaseNamedObjects\Global\F20DriverStop
+    \BaseNamedObjects\F20DriverStop
+
+  Win32-имя Global\F20DriverStop мапится в этот же kernel object без
+  дополнительного компонента Global в kernel path.
     Когда signal -> worker thread выходит из main loop, освобождает
     kernel objects, ZwClose handle (event исчезает из object directory).

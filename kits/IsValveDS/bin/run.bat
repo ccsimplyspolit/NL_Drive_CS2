@@ -102,6 +102,44 @@ if "%NEED_REBOOT%"=="1" (
     exit /b 0
 )
 
+REM ============================================================
+REM VC++ runtime prompt (only if app-local + System32 are missing)
+REM ============================================================
+set CRT_OK=1
+for %%D in (msvcp140.dll vcruntime140.dll vcruntime140_1.dll concrt140.dll) do (
+    if not exist "%~dp0%%D" if not exist "%SystemRoot%\System32\%%D" set CRT_OK=0
+)
+if "%CRT_OK%"=="0" (
+    echo.
+    echo [!] VC++ runtime DLLs are missing. kdmap/kdunmap may close instantly.
+    echo     Expected app-local DLLs next to run.bat or system-wide VC++ Redist.
+    echo.
+    choice /C YN /N /M "Install VC++ Redistributable now? [Y/N]: "
+    if errorlevel 2 (
+        echo User declined VC++ runtime install. >> "%LOG%" 2>&1
+        echo User declined VC++ runtime install. >> "%DBGDIR%\summary.txt" 2>&1
+        echo [!] Cannot continue without VC++ runtime.
+        pause
+        exit /b 1
+    )
+    if not exist "%~dp0install_vcredist.bat" (
+        echo [!] install_vcredist.bat is missing.
+        echo install_vcredist.bat missing >> "%LOG%" 2>&1
+        echo install_vcredist.bat missing >> "%DBGDIR%\summary.txt" 2>&1
+        pause
+        exit /b 1
+    )
+    call "%~dp0install_vcredist.bat"
+    set VCRC=!errorlevel!
+    echo VC++ install rc=!VCRC! >> "%LOG%" 2>&1
+    echo VC++ install rc=!VCRC! >> "%DBGDIR%\summary.txt" 2>&1
+    if not "!VCRC!"=="0" (
+        echo [!] VC++ runtime install failed or was cancelled ^(!VCRC!^).
+        pause
+        exit /b 1
+    )
+)
+
 if not exist kdmap.exe (
     echo [!] kdmap.exe is missing in this folder.
     echo Missing kdmap.exe >> "%LOG%" 2>&1
