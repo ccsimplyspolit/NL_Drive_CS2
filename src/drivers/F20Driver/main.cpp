@@ -5,7 +5,10 @@
 //   - Polls round_kills counter in cs2 every POLL_INTERVAL_MS via MmCopyVirtualMemory.
 //   - On each detected kill (delta > 0):
 //       * presses F20 (held statically for KILL_HOLD_MS = 2.5 sec)
-//       * taps one random Numpad 0..9 key for NUMPAD_TAP_MS, never repeats last
+//       * taps one Numpad key for NUMPAD_TAP_MS, ALTERNATING between the
+//         POSITIVE and NEGATIVE yaw pools (rule #3: "1 kill positive value,
+//         1 kill negative value and so on"); inside the chosen pool the key
+//         is uniform-random over 5 candidates, never the previous one.
 //   - Kills detected while F20 is still held are dropped (== 2.5 sec cooldown).
 //
 // Keyboard injection uses kbdclass!KeyboardClassServiceCallback located via
@@ -29,7 +32,7 @@
 #include <bcrypt.h>
 #pragma warning(pop)
 
-#define F20DRIVER_VERSION_STRING "v8 (GitHub CS2 offsets + safe stop + hardened RNG/DACL)"
+#define F20DRIVER_VERSION_STRING "v9 (alternating POS/NEG yaw pools per OPSEC rule #3)"
 
 // ---- CS2 offsets fallback (a2x/cs2-dumper main) ---------------------------
 // START.bat updates these from github:a2x/cs2-dumper into
@@ -51,18 +54,43 @@
 #define NUMPAD_TAP_MS       55            // random Numpad key hold
 #define POLL_INTERVAL_MS    10
 
-// Numpad 0..9 set-1 scan codes (no E0 prefix, NumLock-on style)
-static const USHORT g_NumpadScans[10] = {
-    0x52, // Numpad0
-    0x4F, // Numpad1
-    0x50, // Numpad2
-    0x51, // Numpad3
-    0x4B, // Numpad4
-    0x4C, // Numpad5
-    0x4D, // Numpad6
-    0x47, // Numpad7
-    0x48, // Numpad8
-    0x49, // Numpad9
+// Numpad set-1 scan codes (no E0 prefix, NumLock-on style), split into two
+// pools by the sign of the yaw offset that the user wired in their cheat
+// loadout. The picker below ALTERNATES between pools on every kill so that we
+// never produce two consecutive positive (or two consecutive negative) yaw
+// changes -- this is the rule "1 kill positive value, 1 kill negative value
+// and so on" from the OPSEC checklist (rule #3, "Change Yaw Local view with
+// MOUSE OVERRIDE after every kill, recommended between -15..15").
+//
+// Layout matches the loadout shown in the user's bind table:
+//
+//   Pool        Numpad   Scan   Bound yaw
+//   POSITIVE    Num1     0x4F   +16
+//               Num2     0x50   +12
+//               Num4     0x4B    +8
+//               Num6     0x4D    +4
+//               Num8     0x48    +1
+//   NEGATIVE    Num0     0x52   -16
+//               Num3     0x51   -12
+//               Num5     0x4C    -8
+//               Num7     0x47    -4
+//               Num9     0x49    -1
+//
+// If the user changes their yaw bind layout, this table must be updated.
+#define NUMPAD_POOL_SIZE 5
+static const USHORT g_NumpadScansPositive[NUMPAD_POOL_SIZE] = {
+    0x4F, // Numpad1  -> +16
+    0x50, // Numpad2  -> +12
+    0x4B, // Numpad4  -> +8
+    0x4D, // Numpad6  -> +4
+    0x48, // Numpad8  -> +1
+};
+static const USHORT g_NumpadScansNegative[NUMPAD_POOL_SIZE] = {
+    0x52, // Numpad0  -> -16
+    0x51, // Numpad3  -> -12
+    0x4C, // Numpad5  -> -8
+    0x47, // Numpad7  -> -4
+    0x49, // Numpad9  -> -1
 };
 
 // ---- Logging --------------------------------------------------------------
@@ -142,7 +170,18 @@ static HANDLE  g_DoneEventHandle   = NULL;
 static PKEVENT g_DoneEvent         = NULL;
 
 static volatile LONG g_RngSeed = 0;
-static ULONG g_LastNumIdx = 0xFFFFFFFF;   // index of last injected Num key, or 0xFFFFFFFF for none
+// Picker state for alternating yaw injection.
+//   g_LastSignPositive   - sign of the previous tap. We flip this every kill so
+//                          the new tap is from the opposite-sign pool. Initial
+//                          value TRUE means the very first kill picks NEGATIVE
+//                          (matching the "1 kill positive, 1 kill negative"
+//                          phrasing where positive is the leading example).
+//   g_LastPositiveIdx /  - per-pool last index, so we never repeat the same
+//   g_LastNegativeIdx      Numpad key twice in a row inside the same pool.
+//                          0xFFFFFFFF = no previous pick for that pool yet.
+static BOOLEAN g_LastSignPositive = TRUE;
+static ULONG   g_LastPositiveIdx  = 0xFFFFFFFF;
+static ULONG   g_LastNegativeIdx  = 0xFFFFFFFF;
 
 // Runtime-detected OS version (set in DriverEntry via RtlGetVersion).
 static BOOLEAN g_IsWin10        = FALSE;
@@ -1326,8 +1365,17 @@ static void InjectScan(USHORT scanCode, BOOLEAN keyup) {
 }
 
 // ============================================================================
-// Random Numpad picker - returns one of g_NumpadScans[0..9], never the same
-// index as the previous call. Uniform over the 9 remaining values.
+// Random Numpad picker - alternates between the POSITIVE and NEGATIVE yaw
+// pools on every kill (rule #3: "1 kill positive value, 1 kill negative value
+// and so on"), then picks uniformly inside the chosen pool, never repeating
+// the same Numpad key twice in a row inside that pool.
+//
+// Pool flip happens BEFORE the pick, so the sequence is strictly:
+//   kill 1: NEG (random of 5)
+//   kill 2: POS (random of 5)
+//   kill 3: NEG (random of 4, excluding the one used on kill 1)
+//   kill 4: POS (random of 4, excluding the one used on kill 2)
+//   ...
 //
 // CNG entropy first, rdtsc/perf-counter/state fallback if CNG is unavailable.
 // ============================================================================
@@ -1363,17 +1411,28 @@ static ULONG NextRandomU32(void) {
 }
 
 static USHORT PickRandomNumpadScan(void) {
+    // Flip the sign first: this kill's pool is the opposite of the previous
+    // kill's pool. After the flip, g_LastSignPositive holds the sign of the
+    // pick we are about to make.
+    g_LastSignPositive = !g_LastSignPositive;
+
+    const USHORT* pool   = g_LastSignPositive ? g_NumpadScansPositive
+                                              : g_NumpadScansNegative;
+    ULONG*        lastIx = g_LastSignPositive ? &g_LastPositiveIdx
+                                              : &g_LastNegativeIdx;
+
     ULONG r;
-    if (g_LastNumIdx >= 10) {
-        // First pick: any of 10
-        r = NextRandomU32() % 10;
+    if (*lastIx >= NUMPAD_POOL_SIZE) {
+        // First pick from this pool: uniform over all 5 entries.
+        r = NextRandomU32() % NUMPAD_POOL_SIZE;
     } else {
-        // Pick uniformly from 9 values excluding g_LastNumIdx
-        r = NextRandomU32() % 9;
-        if (r >= g_LastNumIdx) r++;
+        // Subsequent picks: uniform over the 4 entries that are NOT the
+        // previous pick from this same pool.
+        r = NextRandomU32() % (NUMPAD_POOL_SIZE - 1);
+        if (r >= *lastIx) r++;
     }
-    g_LastNumIdx = r;
-    return g_NumpadScans[r];
+    *lastIx = r;
+    return pool[r];
 }
 
 // ============================================================================
@@ -1484,9 +1543,12 @@ VOID WorkerThread(_In_ PVOID Context) {
                             BOOLEAN stopDuringNumTap = WaitOrStop(NUMPAD_TAP_MS);
                             InjectScan(numScan, TRUE);
 
-                            LOG_INFO("KILL RK=%d->%d  F20 hold=%dms  Num scan=0x%X idx=%u tap=%dms%s",
+                            ULONG poolIx = g_LastSignPositive ? g_LastPositiveIdx
+                                                              : g_LastNegativeIdx;
+                            LOG_INFO("KILL RK=%d->%d  F20 hold=%dms  Num scan=0x%X sign=%s idx=%u tap=%dms%s",
                                      lastRoundKills, roundKills,
-                                     KILL_HOLD_MS, numScan, g_LastNumIdx,
+                                     KILL_HOLD_MS, numScan,
+                                     g_LastSignPositive ? "POS" : "NEG", poolIx,
                                      NUMPAD_TAP_MS, stopDuringNumTap ? " stop-pending" : "");
                             lastRoundKills = roundKills;
                         }
