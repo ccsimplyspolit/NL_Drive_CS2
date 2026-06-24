@@ -283,10 +283,43 @@ int main(int argc, char** argv)
     printf("[+] auto-poll started; type 'h' for commands.\n");
 
     std::thread poller(PollerThread);
+
+    // Open CONIN$ directly. fgets(stdin) silently returns NULL on systems
+    // where the parent process delivered an unusual stdin handle (observed
+    // on a modified Windows 10 22H2 "ProMod" build): the loop would exit
+    // immediately, the user just saw the banner and then "Console exited."
+    // CONIN$ talks to the console buffer directly and is independent of
+    // stdin redirection.
+    HANDLE conin = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                               OPEN_EXISTING, 0, NULL);
+    if (conin == INVALID_HANDLE_VALUE) {
+        // No console at all (truly detached / piped). Fall back to
+        // headless mode: poller keeps printing, main thread waits on the
+        // stop event or Ctrl+C. This is better than exiting in 5ms.
+        printf("[i] no console input handle available; running headless\n");
+        printf("    (press Ctrl+C to quit; poller still runs every %lu ms)\n",
+               (unsigned long)POLL_INTERVAL_MS);
+        fflush(stdout);
+        while (!g_stop.load(std::memory_order_relaxed)) Sleep(500);
+        if (poller.joinable()) poller.join();
+        if (g_state) UnmapViewOfFile(g_state);
+        if (g_shmHandle) CloseHandle(g_shmHandle);
+        if (g_stopEvent) CloseHandle(g_stopEvent);
+        return 0;
+    }
+
     Prompt();
 
     char line[64];
-    while (fgets(line, (int)sizeof(line), stdin)) {
+    while (true) {
+        DWORD nread = 0;
+        // ReadConsoleA blocks until a line is committed (Enter) or the
+        // console is closed. It does NOT depend on the CRT's stdin state.
+        if (!ReadConsoleA(conin, line, (DWORD)sizeof(line) - 1, &nread, NULL))
+            break;
+        if (nread == 0) break;
+        line[nread] = 0;
         size_t n = strlen(line);
         while (n && (line[n-1] == '\n' || line[n-1] == '\r' ||
                      line[n-1] == ' '  || line[n-1] == '\t')) line[--n] = 0;
@@ -348,6 +381,7 @@ int main(int argc, char** argv)
     g_stop.store(true);
     if (poller.joinable()) poller.join();
 
+    if (conin != INVALID_HANDLE_VALUE) CloseHandle(conin);
     if (g_state) UnmapViewOfFile(g_state);
     if (g_shmHandle) CloseHandle(g_shmHandle);
     if (g_stopEvent) CloseHandle(g_stopEvent);
