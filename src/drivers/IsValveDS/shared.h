@@ -13,12 +13,20 @@
 //     OpenEvent + SetEvent).
 //
 
-// Kernel-side names (used inside the driver).
-#define ISVALVEDS_SHM_KERNEL_NAME    L"\\BaseNamedObjects\\Global\\IsValveDSState"
-#define ISVALVEDS_STOP_KERNEL_NAME   L"\\BaseNamedObjects\\Global\\IsValveDSStop"
-#define ISVALVEDS_DONE_KERNEL_NAME   L"\\BaseNamedObjects\\Global\\IsValveDSStopped"
+// Kernel-side names: create the objects directly under \BaseNamedObjects,
+// NOT under \BaseNamedObjects\Global. The user-mode "Global\X" prefix is a
+// Win32 shorthand that resolves to \BaseNamedObjects\X (without an extra
+// "Global" path component). On stock Windows there is also a symlink
+// \BaseNamedObjects\Global -> \BaseNamedObjects, which is why the old paths
+// happened to work, but on hardened / modified Windows builds (one user
+// reported "Windows 10 22H2 ProMod UEFI") that symlink may not be present,
+// and the user-mode console would silently fail to open SHM. Matching what
+// F20Driver already does keeps both kits behavior-consistent.
+#define ISVALVEDS_SHM_KERNEL_NAME    L"\\BaseNamedObjects\\IsValveDSState"
+#define ISVALVEDS_STOP_KERNEL_NAME   L"\\BaseNamedObjects\\IsValveDSStop"
+#define ISVALVEDS_DONE_KERNEL_NAME   L"\\BaseNamedObjects\\IsValveDSStopped"
 
-// User-mode names (Win32 layer prepends \BaseNamedObjects for "Global\...").
+// User-mode names (Win32 layer translates "Global\X" -> \BaseNamedObjects\X).
 #define ISVALVEDS_SHM_USER_NAME      "Global\\IsValveDSState"
 #define ISVALVEDS_STOP_USER_NAME     "Global\\IsValveDSStop"
 #define ISVALVEDS_DONE_USER_NAME     "Global\\IsValveDSStopped"

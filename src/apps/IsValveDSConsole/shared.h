@@ -5,9 +5,13 @@
 // Keep identical copies in IsValveDS_Driver/ and IsValveDS_Console/.
 //
 
-#define ISVALVEDS_SHM_KERNEL_NAME    L"\\BaseNamedObjects\\Global\\IsValveDSState"
-#define ISVALVEDS_STOP_KERNEL_NAME   L"\\BaseNamedObjects\\Global\\IsValveDSStop"
-#define ISVALVEDS_DONE_KERNEL_NAME   L"\\BaseNamedObjects\\Global\\IsValveDSStopped"
+// Kernel objects live directly under \BaseNamedObjects. Win32 "Global\X"
+// maps to \BaseNamedObjects\X, not \BaseNamedObjects\Global\X. The old paths
+// only worked because of an implicit \BaseNamedObjects\Global -> \BaseNamedObjects
+// symlink on stock Windows, which is missing on some hardened builds.
+#define ISVALVEDS_SHM_KERNEL_NAME    L"\\BaseNamedObjects\\IsValveDSState"
+#define ISVALVEDS_STOP_KERNEL_NAME   L"\\BaseNamedObjects\\IsValveDSStop"
+#define ISVALVEDS_DONE_KERNEL_NAME   L"\\BaseNamedObjects\\IsValveDSStopped"
 
 #define ISVALVEDS_SHM_USER_NAME      "Global\\IsValveDSState"
 #define ISVALVEDS_STOP_USER_NAME     "Global\\IsValveDSStop"

@@ -123,6 +123,9 @@ $isvFiles = @(
     'stop.bat',
     'unload_isvalveds.ps1',
     'update_isvalveds_offsets.ps1',
+    # Optional helper to install VC++ Redist system-wide if the app-local
+    # DLLs were quarantined / deleted.
+    'install_vcredist.bat',
     # App-local VC++ runtime so the kit works on machines without VC Redist.
     # Copied only if build_release.ps1 found them under VS 2022 Redist dir.
     'msvcp140.dll',
