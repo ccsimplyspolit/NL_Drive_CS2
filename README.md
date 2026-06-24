@@ -3,6 +3,11 @@
 Набор из двух kernel-mode проектов для CS2 с безопасным запуском/остановкой,
 pre-load диагностикой и автоматическим обновлением нужных offsets.
 
+## Wiki / Instructions
+
+- [RU] Полная инструкция: [docs/WIKI.md#ru-полная-инструкция](docs/WIKI.md#ru-полная-инструкция)
+- [EN] Full guide: [docs/WIKI.md#en-full-guide](docs/WIKI.md#en-full-guide)
+
 ## Структура
 
 ```text
