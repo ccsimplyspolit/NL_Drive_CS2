@@ -351,7 +351,7 @@ CS2 offsets:
     или sanity-check не прошёл, используется built-in fallback.
 
 Сборка драйвера:
-    msbuild MyDriver23\MyDriver2\F20Driver\F20Driver.vcxproj
+    msbuild src\drivers\F20Driver\F20Driver.vcxproj
             /p:Configuration=Release /p:Platform=x64
 
 Сборка kdmap/kdunmap:
@@ -359,10 +359,13 @@ CS2 offsets:
        msbuild kdmapper\kdmapper.sln /p:Configuration=lib-Release /p:Platform=x64
             /t:kdmapper:Rebuild
     2. Потом kdmap + kdunmap:
-       msbuild MyDriver23\kdmap_unmap\kdmap\kdmap.vcxproj
+       msbuild src\tools\kdmap\kdmap.vcxproj
             /p:Configuration=Release /p:Platform=x64
-       msbuild MyDriver23\kdmap_unmap\kdunmap\kdunmap.vcxproj
+       msbuild src\tools\kdunmap\kdunmap.vcxproj
             /p:Configuration=Release /p:Platform=x64
+
+Полная сборка и упаковка:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1
 
 Registry layout:
     HKLM\SOFTWARE\F20Driver\

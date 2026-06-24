@@ -297,12 +297,15 @@ CS2 offsets:
     Ручная правка OFF_* в main.cpp для обычных обновлений CS2 больше не нужна.
 
 Сборка драйвера (нужен установленный WDK):
-    msbuild "isvalveDS spoofer\IsValveDS_Driver\IsValveDS_Driver.vcxproj"
+    msbuild src\drivers\IsValveDS\IsValveDS_Driver.vcxproj
             /p:Configuration=Release /p:Platform=x64
 
 Сборка консоли:
-    msbuild "isvalveDS spoofer\IsValveDS_Console\IsValveDS_Console.vcxproj"
+    msbuild src\apps\IsValveDSConsole\IsValveDS_Console.vcxproj
             /p:Configuration=Release /p:Platform=x64
+
+Полная сборка и упаковка:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1
 
 Протокол SHM:
     struct ISVALVEDS_STATE {

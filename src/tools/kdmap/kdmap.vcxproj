@@ -13,6 +13,9 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <Keyword>Win32Proj</Keyword>
   </PropertyGroup>
+  <PropertyGroup>
+    <RepoRoot>$(MSBuildThisFileDirectory)..\..\..\</RepoRoot>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -23,9 +26,10 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(ProjectDir)..\..\..\kdmapper\kdmapper\include;$(ProjectDir)..\;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)..\..\..\kdmapper\x64\lib;$(LibraryPath)</LibraryPath>
-    <OutDir>$(ProjectDir)..\bin\</OutDir>
+    <IncludePath>$(RepoRoot)..\kdmapper\kdmapper\include;$(MSBuildThisFileDirectory)..\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(RepoRoot)..\kdmapper\x64\lib;$(LibraryPath)</LibraryPath>
+    <OutDir>$(RepoRoot)build\bin\</OutDir>
+    <IntDir>$(RepoRoot)build\obj\kdmap\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>

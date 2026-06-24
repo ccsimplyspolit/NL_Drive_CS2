@@ -24,7 +24,7 @@
 # -----------------------------------------------------------------------------
 
 param(
-    [string]$Analyzer = "$PSScriptRoot\..\kdmap_unmap\bin\analyze_kbdclass.exe",
+    [string]$Analyzer = "$PSScriptRoot\..\..\build\bin\analyze_kbdclass.exe",
     [string]$CacheDir = "$PSScriptRoot\cache_kbdclass"
 )
 
@@ -33,7 +33,7 @@ $msSymbolBase = "https://msdl.microsoft.com/download/symbols"
 
 if (-not (Test-Path $Analyzer)) {
     Write-Error "Analyzer not found: $Analyzer"
-    Write-Error "Build it first: msbuild kdmap_unmap\analyze_kbdclass\analyze_kbdclass.vcxproj /p:Configuration=Release /p:Platform=x64"
+    Write-Error "Build it first: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1 -SkipPackage"
     exit 1
 }
 

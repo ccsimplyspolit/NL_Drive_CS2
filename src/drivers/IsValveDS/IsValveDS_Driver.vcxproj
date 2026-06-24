@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <RepoPackagesDir>$(MSBuildThisFileDirectory)..\..\MyDriver2\packages\</RepoPackagesDir>
+    <RepoRoot>$(MSBuildThisFileDirectory)..\..\..\</RepoRoot>
+    <RepoPackagesDir Condition="'$(RepoPackagesDir)' == '' and Exists('$(RepoRoot)packages\')">$(RepoRoot)packages\</RepoPackagesDir>
+    <RepoPackagesDir Condition="'$(RepoPackagesDir)' == '' and Exists('$(RepoRoot)MyDriver2\packages\')">$(RepoRoot)MyDriver2\packages\</RepoPackagesDir>
+    <RepoPackagesDir Condition="'$(RepoPackagesDir)' == ''">$(RepoRoot)packages\</RepoPackagesDir>
   </PropertyGroup>
   <Import Project="$(RepoPackagesDir)Microsoft.Windows.WDK.x64.10.0.26100.6584\build\native\Microsoft.Windows.WDK.x64.props" Condition="Exists('$(RepoPackagesDir)Microsoft.Windows.WDK.x64.10.0.26100.6584\build\native\Microsoft.Windows.WDK.x64.props')" />
   <Import Project="$(RepoPackagesDir)Microsoft.Windows.SDK.CPP.x64.10.0.26100.7175\build\native\Microsoft.Windows.SDK.cpp.x64.props" Condition="Exists('$(RepoPackagesDir)Microsoft.Windows.SDK.CPP.x64.10.0.26100.7175\build\native\Microsoft.Windows.SDK.cpp.x64.props')" />

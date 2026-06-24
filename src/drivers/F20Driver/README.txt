@@ -8,13 +8,14 @@ F20DRIVER
   Без оверлея, без постоянного юзермод-компонента.
 
 Сборка (Visual Studio + WDK):
-  1. Открыть MyDriver23\MyDriver2\MyDriver2.slnx в VS
-  2. Add Existing Project → выбрать F20Driver\F20Driver.vcxproj
-  3. Restore NuGet packages (используются те же что у MyDriver2)
-  4. Build Release|x64 → выйдет F20Driver.sys в F20Driver\x64\Release\
+  1. Из корня репозитория:
+       powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1
+  2. Либо собрать только проект:
+       msbuild src\drivers\F20Driver\F20Driver.vcxproj /p:Configuration=Release /p:Platform=x64
+  3. Output: src\drivers\F20Driver\x64\Release\F20Driver.sys
 
 Загрузка:
-  Используй F20Kit\START.bat. Он делает safe unload предыдущего инстанса,
+  Используй kits\F20Kit\START.bat. Он делает safe unload предыдущего инстанса,
   обновляет CS2 offsets, запускает analyzer kbdclass и маппит драйвер
   через tracked kdmap.exe.
 
@@ -28,7 +29,7 @@ CS2 console:
   при включённом флаге "Capture Kernel".
 
 Обновление оффсетов:
-  F20Kit\update_cs2_offsets.ps1 скачивает свежие данные из a2x/cs2-dumper
+  kits\F20Kit\update_cs2_offsets.ps1 скачивает свежие данные из a2x/cs2-dumper
   и пишет их в HKLM\SOFTWARE\F20Driver перед загрузкой. Если GitHub
   недоступен или sanity-check не прошёл, драйвер использует built-in fallback.
 
