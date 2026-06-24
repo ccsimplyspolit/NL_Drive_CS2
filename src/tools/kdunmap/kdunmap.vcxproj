@@ -40,6 +40,9 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <!-- kdmapper_lib-Release.lib is built with /MD; switching this exe to
+           /MT triggers LNK2038. Leave the default /MD and rely on app-local
+           MSVCP140.dll + VCRUNTIME140*.dll deployed by build_release.ps1. -->
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

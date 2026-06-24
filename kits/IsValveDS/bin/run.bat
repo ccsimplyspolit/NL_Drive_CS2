@@ -326,8 +326,22 @@ REM Run console (auto-polls every 3s)
 REM ============================================================
 echo.
 echo [2/2] Starting console (auto-poll every 3s, 'h' for commands)...
+echo     Console writes detailed events to IsValveDS_Console.log
 echo.
+REM Two things to note:
+REM   1. We do NOT redirect stdin (no `< NUL`) - console needs a real TTY for
+REM      its ReadConsoleA loop. Redirecting stdin here would kill it.
+REM   2. We capture the exit code so the post-run summary can mention it.
 "%~dp0IsValveDS_Console.exe"
+set CONSOLE_RC=%errorlevel%
 echo.
-echo Console exited. Log: "%LOG%"
+echo Console exited with code %CONSOLE_RC%.
+echo run log:     "%LOG%"
+echo console log: "%~dp0IsValveDS_Console.log"
+if not "%CONSOLE_RC%"=="0" (
+    echo [!] Console reported a non-zero exit.
+    echo     Open IsValveDS_Console.log for full diagnostics and send the
+    echo     last ~50 lines to dev. The log captures every WinAPI call,
+    echo     errno via FormatMessage, and an unhandled-exception filter.
+)
 pause

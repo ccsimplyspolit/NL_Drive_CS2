@@ -50,6 +50,47 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'src\apps\IsValveDSConsole\x64\Relea
 Copy-Item -LiteralPath (Join-Path $binDir 'kdmap.exe') -Destination (Join-Path $isvBin 'kdmap.exe') -Force
 Copy-Item -LiteralPath (Join-Path $binDir 'kdunmap.exe') -Destination (Join-Path $isvBin 'kdunmap.exe') -Force
 
+# ------------------------------------------------------------------------
+# Visual C++ runtime DLLs - app-local deployment.
+#
+# kdmap.exe and kdunmap.exe link against kdmapper_lib-Release.lib which is
+# itself built with /MD, so the exe ends up needing MSVCP140.dll and
+# VCRUNTIME140*.dll. On a machine without VC++ 2015-2022 Redistributable
+# installed the loader fails before main() with no console output and the
+# user sees nothing happen. Copying these DLLs next to the exe is the
+# Microsoft-blessed "app-local" deployment model.
+#
+# IsValveDS_Console.exe and analyze_kbdclass.exe are built with /MT and do
+# NOT need these DLLs; we copy them anyway because they live in the same
+# folder and the redundant copies are <1 MB.
+# ------------------------------------------------------------------------
+$msvcRedistRoot = Get-ChildItem -Path 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Redist\MSVC' -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $msvcRedistRoot) {
+    $msvcRedistRoot = Get-ChildItem -Path 'C:\Program Files (x86)\Microsoft Visual Studio\2022\*\VC\Redist\MSVC' -ErrorAction SilentlyContinue | Select-Object -First 1
+}
+if ($msvcRedistRoot) {
+    $crtVersionDir = Get-ChildItem -Path $msvcRedistRoot.FullName -Directory |
+        Where-Object { $_.Name -match '^\d' } |
+        Sort-Object { [version]$_.Name } -Descending |
+        Select-Object -First 1
+    if ($crtVersionDir) {
+        $crtDir = Join-Path $crtVersionDir.FullName 'x64\Microsoft.VC143.CRT'
+        $crtDlls = @('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll','concrt140.dll')
+        foreach ($dll in $crtDlls) {
+            $src = Join-Path $crtDir $dll
+            if (Test-Path -LiteralPath $src) {
+                Copy-Item -LiteralPath $src -Destination (Join-Path $f20Kit $dll) -Force
+                Copy-Item -LiteralPath $src -Destination (Join-Path $isvBin $dll) -Force
+                Write-Host "  + app-local CRT: $dll  (from $($crtVersionDir.Name))"
+            }
+        }
+    } else {
+        Write-Warning "Could not find a versioned CRT subdir under $($msvcRedistRoot.FullName)"
+    }
+} else {
+    Write-Warning 'VC++ redist not found under Visual Studio 2022; kdmap.exe / kdunmap.exe will require system-installed VC Redist.'
+}
+
 if ($SkipPackage) {
     Write-Host 'Build complete; packaging skipped.'
     exit 0
@@ -81,10 +122,21 @@ $isvFiles = @(
     'run.bat',
     'stop.bat',
     'unload_isvalveds.ps1',
-    'update_isvalveds_offsets.ps1'
+    'update_isvalveds_offsets.ps1',
+    # App-local VC++ runtime so the kit works on machines without VC Redist.
+    # Copied only if build_release.ps1 found them under VS 2022 Redist dir.
+    'msvcp140.dll',
+    'vcruntime140.dll',
+    'vcruntime140_1.dll',
+    'concrt140.dll'
 )
 foreach ($file in $isvFiles) {
-    Copy-Item -LiteralPath (Join-Path $isvBin $file) -Destination (Join-Path $stageRoot 'bin')
+    $src = Join-Path $isvBin $file
+    if (Test-Path -LiteralPath $src) {
+        Copy-Item -LiteralPath $src -Destination (Join-Path $stageRoot 'bin')
+    } else {
+        Write-Warning "skipping missing kit file: $file"
+    }
 }
 
 $isvZip = Join-Path $isvKit 'IsValveDS_spoofer.zip'
