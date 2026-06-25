@@ -57,7 +57,7 @@
 
 | Kit | Назначение |
 | --- | --- |
-| 🎯 **F20Kit** | На каждый kill: P-down → ждём **2.2 сек** → tap одной из 22 клавиш (Numpad 0-9 + F13-F24) с yaw `[-35..+35]` → ждём 0.3 сек → P-up. Tap происходит **за 300 ms до отжатия P**, пока kill-action key ещё активен, поэтому MOUSE OVERRIDE в чите успевает применить yaw в момент когда P держится. Знак yaw чередуется (POS ↔ NEG), magnitude uniform-random из 10 (исключая симметричный к предыдущему). |
+| 🎯 **F20Kit** | На каждый kill: P-down → ждём **рандомное 1500..3000 ms** → tap одной из 22 клавиш (Numpad 0-9 + F13-F24) с yaw `[-35..+35]` → P-up через рандомные 245..350 ms после tap-up. Tap происходит **за 245..350 ms до отжатия P** (тоже рандом), пока kill-action key ещё активен. Знак yaw чередуется (POS ↔ NEG), magnitude uniform-random с **исключением последних 3..8 magnitudes** (random window каждый pick) - одна величина не повторяется в окне 3..8 kills независимо от знака. |
 | 🪪 **IsValveDS** | Spoof `C_CSGameRules::m_bIsValveDS` из kernel-mode, управление через user-mode SHM-консоль. |
 
 Раскладка по репозиторию:
@@ -140,14 +140,18 @@ C:\NL_Drive_CS2\IsValveDS
 - грузит `F20Driver.sys` через `kdmap.exe --key F20Driver --indPages`;
 - выводит **готовую unbind-строку** + **напоминание про NumLock**.
 
-> 💡 **Точный timing одного kill-цикла:**
+> 💡 **Timing одного kill-цикла (с рандомизацией):**
 > ```
->  T=0      ms : InjectScan(P, DOWN)           ← kill detected, P нажата
->  T=2200   ms : InjectScan(tap, DOWN)         ← yaw-tap начинается, P ещё держится
->  T=2255   ms : InjectScan(tap, UP)           ← yaw-tap завершён
->  T=2500   ms : InjectScan(P, UP)             ← P отпущена
+>  T=0                   ms : InjectScan(P, DOWN)     ← kill detected, P нажата
+>  hold = rand[1500..3000] ms (per-kill)              ← cooldown окно
+>  lead = rand[245..350]  ms (per-kill)               ← когда tap до P-up
+>  T=(hold - lead)       ms : InjectScan(tap, DOWN)   ← yaw-tap начинается
+>  T=(hold - lead + 55)  ms : InjectScan(tap, UP)     ← yaw-tap завершён
+>  T=hold                ms : InjectScan(P, UP)       ← P отпущена
 > ```
-> Если в течение этих 2500 ms случится ещё kill — игнорируется (cooldown).
+> Пример: hold=2400, lead=290 → tap_down at 2110, tap_up at 2165, P_up at 2400. Если за эти hold ms случится ещё kill — игнорируется (cooldown).
+>
+> 🎲 **OPSEC: magnitude exclusion 3..8.** Драйвер запоминает последние 8 magnitudes в ring-буфере. На каждом pick рандомно выбирается размер blacklist (3..8) — этот размер заново рандомится каждый kill. Candidate set = все 11 magnitudes минус blacklist. Так одна и та же величина (например +18 или -18) не повторяется в окне ближайших 3..8 kills. Минимум 3 кандидата всегда (11-8=3), uniform-random.
 
 ---
 
@@ -442,7 +446,7 @@ F20Kit\
 
 | Kit | Purpose |
 | --- | --- |
-| 🎯 **F20Kit** | Per kill: P-down → wait 2.2 s → tap one of 22 keys (Numpad 0-9 + F13-F24, yaw `[-35..+35]`) → wait 0.3 s → P-up. The tap fires **300 ms BEFORE P-up**, while the kill-action key is still held, so the cheat's MOUSE OVERRIDE applies the yaw change at the right frame. Sign flips every kill (POS ↔ NEG); magnitude is uniform-random out of 10 candidates (skips the symmetric counterpart of the previous tap, so view never sums back to 0). |
+| 🎯 **F20Kit** | Per kill: P-down → wait **random 1500..3000 ms** → tap one of 22 keys (Numpad 0-9 + F13-F24, yaw `[-35..+35]`) → P-up. The tap fires **245..350 ms BEFORE P-up** (also randomized), while the kill-action key is still held, so the cheat's MOUSE OVERRIDE applies the yaw change at the right frame. Sign flips every kill (POS ↔ NEG); magnitude is uniform-random with **last 3..8 magnitudes blacklisted** (random window each pick) so the same value can't repeat within a 3-to-8-kill window regardless of sign. |
 | 🪪 **IsValveDS** | Spoof `C_CSGameRules::m_bIsValveDS` from kernel mode, driven by a user-mode SHM console. |
 
 Repository layout:

@@ -4,16 +4,20 @@
 // Behavior:
 //   - Polls round_kills counter in cs2 every POLL_INTERVAL_MS via MmCopyVirtualMemory.
 //   - On each detected kill (delta > 0):
-//       * presses P (held statically for KILL_HOLD_MS = 2.5 sec)
+//       * presses P, held for a RANDOM duration in
+//         [KILL_HOLD_MIN_MS, KILL_HOLD_MAX_MS] = [1500, 3000] ms
 //       * picks one key from the 22-key tap pool (Numpad 0..9 + F13..F24)
 //         using ALTERNATING yaw sign on every kill + uniform-random magnitude
-//         out of 10 candidates from the opposite-sign pool (excluding the
-//         symmetric counterpart of the previous tap so the view never cancels
-//         exactly back to 0)
-//       * fires that tap NUMPAD_TAP_MS down/up, scheduled
-//         TAP_BEFORE_HOLD_END_MS (= 300) ms BEFORE the P-up edge so the
-//         cheat's mouse-override happens while the kill key is still held.
-//   - Kills detected while P is still held are dropped (== 2.5 sec cooldown).
+//         from the opposite-sign pool, EXCLUDING the magnitudes of the last
+//         3..8 kills (random window every pick) so the same magnitude never
+//         repeats within a short observation window regardless of sign
+//         (no +18/-18, no +18/+18 across consecutive POS-only picks, etc.)
+//       * fires that tap NUMPAD_TAP_MS down/up, scheduled a RANDOM
+//         [TAP_LEAD_MIN_MS, TAP_LEAD_MAX_MS] = [245, 350] ms BEFORE the P-up
+//         edge so the cheat's mouse-override happens while the kill key is
+//         still held.
+//   - Kills detected while P is still held are dropped (cooldown == the
+//     randomized hold length of the active kill).
 //
 // Keyboard injection uses kbdclass!KeyboardClassServiceCallback located via
 // a usermode analyzer (analyze_kbdclass.exe) that writes the RVA to
@@ -36,7 +40,7 @@
 #include <bcrypt.h>
 #pragma warning(pop)
 
-#define F20DRIVER_VERSION_STRING "v11 (tap fires 300 ms before P-up)"
+#define F20DRIVER_VERSION_STRING "v13 (randomized hold + tap lead + 3..8 magnitude history exclusion)"
 
 // ---- CS2 offsets fallback (a2x/cs2-dumper main) ---------------------------
 // START.bat updates these from github:a2x/cs2-dumper into
@@ -55,17 +59,27 @@
 // and a NEGATIVE-yaw pool of 11 keys, never the same key twice in a row inside
 // the chosen pool. The tap is held briefly so games polling input once per
 // frame do not miss a zero-length make/break pair.
-#define KILL_HOLD_MS         2500         // static P hold
+// P-hold duration is RANDOMIZED on every kill in [KILL_HOLD_MIN_MS,
+// KILL_HOLD_MAX_MS]. Constant 2500 ms gave the cheat a perfectly periodic
+// trigger key signature which is trivial to fingerprint; jitter makes the
+// hold length look natural. The chosen value also becomes the cooldown,
+// because additional kills are dropped while P is still held.
+#define KILL_HOLD_MIN_MS     1500
+#define KILL_HOLD_MAX_MS     3000
+
 #define KILL_SCAN_CODE       0x19         // P set-1 scan code
 #define NUMLOCK_SCAN_CODE    0x45         // NumLock set-1 scan code (no E0 prefix)
 #define NUMPAD_TAP_MS        55           // random tap-key hold (down -> up)
-// Fire the yaw tap N ms BEFORE the P key is released. The cheat needs the
-// yaw change to land while P is still down (the "kill action" key in the
-// cheat), so we schedule the tap near the very end of the P-hold window
-// instead of firing it immediately after the kill. With 300 ms lead we have
-// time for the kbdclass inject -> Win32 input pipeline to deliver the tap
-// before the P-up edge.
-#define TAP_BEFORE_HOLD_END_MS  300
+
+// The yaw tap is fired this many ms BEFORE the P-up edge, also RANDOMIZED in
+// [TAP_LEAD_MIN_MS, TAP_LEAD_MAX_MS] per kill. The cheat needs the yaw tap
+// to land while P is still down (kill-action key window), so we schedule it
+// near the end of the hold window with enough lead for the kbdclass inject
+// pipeline to deliver the tap up-edge before P-up. Even at the minimum lead
+// of 245 ms there are ~190 ms of slack after the 55 ms tap finishes.
+#define TAP_LEAD_MIN_MS      245
+#define TAP_LEAD_MAX_MS      350
+
 #define POLL_INTERVAL_MS     10
 
 // 22 tap keys split into two equal pools by the sign of the yaw offset the
@@ -209,22 +223,35 @@ static volatile LONG g_RngSeed = 0;
 
 // Picker state for alternating yaw injection (P-hold + 22-key tap pool).
 //
-// Rule: every kill flips the yaw sign (POS <-> NEG), and inside the chosen
-// opposite-sign pool we pick uniformly out of the 10 magnitudes that are
-// NOT the symmetric counterpart of the previous kill's magnitude. I.e. if
-// the previous kill used the magnitude at index k (e.g. +18 deg), the next
-// kill picks at random from the negative pool EXCLUDING -18 deg -- so we
-// always rotate the opposite way but never by exactly the same amount,
-// which keeps both the sign and the magnitude unpredictable while still
-// guaranteeing we never cancel the previous tap to exactly 0.
+// Sign rule: every kill flips the yaw sign (POS <-> NEG).
 //
-//   g_LastWasPositive   - sign used by the previous tap. Flipped on each
-//                         pick so the new tap is from the opposite pool.
-//                         Initial TRUE means the very first kill picks NEG.
-//   g_LastMagnitudeIdx  - magnitude index of the previous tap, 0..TAP_POOL_SIZE-1,
-//                         or 0xFFFFFFFF if there has been no pick yet.
-static BOOLEAN g_LastWasPositive   = TRUE;
-static ULONG   g_LastMagnitudeIdx  = 0xFFFFFFFF;
+// Magnitude rule: we keep a ring buffer of the last MAGNITUDE_HISTORY_MAX
+// magnitudes picked (regardless of sign). On every new pick we randomly
+// choose how many of the most recent history entries to BLACKLIST, in
+// [MAGNITUDE_EXCLUDE_MIN_COUNT, MAGNITUDE_EXCLUDE_MAX_COUNT] = [3, 8].
+// The candidate set is all magnitudes NOT in that blacklist, and we pick
+// uniformly from the candidates. This guarantees that the new tap is not
+// the symmetric counterpart of the previous tap AND is not equal in
+// magnitude to any of the last 3..8 taps -- so consecutive yaw changes
+// look uncorrelated to a pattern detector even over short windows.
+//
+// Example sequence the cheat operator would see:
+//     kill 1: -8   (idx=2 NEG)
+//     kill 2: +11  (idx=3 POS)        history=[2,3]
+//     kill 3: -15  (idx=4 NEG)        history=[2,3,4]
+//     kill 4: random POS, but NOT +8, NOT +11, NOT +15
+//
+//   g_LastWasPositive          - sign of the previous tap.
+//   g_LastMagnitudeIdx         - magnitude of the previous tap (for the KILL log).
+//   g_MagnitudeHistory[]       - ring buffer of recent magnitude indices.
+//   g_MagnitudeHistoryWritten  - total writes, used to derive ring head.
+#define MAGNITUDE_HISTORY_MAX        8
+#define MAGNITUDE_EXCLUDE_MIN_COUNT  3
+#define MAGNITUDE_EXCLUDE_MAX_COUNT  8
+static BOOLEAN g_LastWasPositive         = TRUE;
+static ULONG   g_LastMagnitudeIdx        = 0xFFFFFFFF;
+static ULONG   g_MagnitudeHistory[MAGNITUDE_HISTORY_MAX] = { 0 };
+static ULONG   g_MagnitudeHistoryWritten = 0;
 
 // Runtime-detected OS version (set in DriverEntry via RtlGetVersion).
 static BOOLEAN g_IsWin10        = FALSE;
@@ -1453,26 +1480,64 @@ static ULONG NextRandomU32(void) {
     return (ULONG)newState ^ mixed;
 }
 
+// Inclusive uniform random in [Min, Max]. Used to jitter the P-hold length
+// and the tap lead time so the kit's keypress pattern is not periodic.
+static ULONG RandRange(ULONG Min, ULONG Max) {
+    if (Max <= Min) return Min;
+    return Min + (NextRandomU32() % (Max - Min + 1));
+}
+
 static USHORT PickRandomTapScan(void) {
     // Flip the sign: this kill rotates the opposite way from the previous
     // one. After the flip, g_LastWasPositive holds the sign of the pick we
     // are about to make.
     g_LastWasPositive = !g_LastWasPositive;
-
     const USHORT* pool = g_LastWasPositive ? g_TapScansPositive
                                            : g_TapScansNegative;
 
-    ULONG r;
-    if (g_LastMagnitudeIdx >= TAP_POOL_SIZE) {
-        // First pick ever: uniform over all 11 magnitudes.
-        r = NextRandomU32() % TAP_POOL_SIZE;
-    } else {
-        // Pick uniformly over the 10 magnitudes that are NOT the symmetric
-        // counterpart of the previous kill -- so the user never sees yaw
-        // exactly cancel back to 0 (no +18/-18 pair).
-        r = NextRandomU32() % (TAP_POOL_SIZE - 1);
-        if (r >= g_LastMagnitudeIdx) r++;
+    // Decide how many of the most-recent history magnitudes are blacklisted
+    // for THIS pick. We re-randomize every call so the operator can't infer
+    // the exclusion window from observed picks.
+    ULONG excludeRange = MAGNITUDE_EXCLUDE_MAX_COUNT - MAGNITUDE_EXCLUDE_MIN_COUNT + 1;
+    ULONG excludeWant  = MAGNITUDE_EXCLUDE_MIN_COUNT + (NextRandomU32() % excludeRange);
+    if (excludeWant > MAGNITUDE_HISTORY_MAX)        excludeWant = MAGNITUDE_HISTORY_MAX;
+    if (excludeWant > g_MagnitudeHistoryWritten)    excludeWant = g_MagnitudeHistoryWritten;
+
+    // Build the blacklist of magnitude indices from the last `excludeWant`
+    // history entries. Duplicates collapse naturally because we use a flat
+    // bool table indexed by magnitude.
+    BOOLEAN excluded[TAP_POOL_SIZE] = { FALSE };
+    for (ULONG i = 0; i < excludeWant; i++) {
+        // Walk backward through the ring: (written - 1 - i) mod MAX.
+        ULONG slot = (g_MagnitudeHistoryWritten - 1 - i) % MAGNITUDE_HISTORY_MAX;
+        ULONG mag  = g_MagnitudeHistory[slot];
+        if (mag < TAP_POOL_SIZE) excluded[mag] = TRUE;
     }
+
+    // Collect the surviving candidates. With 11 magnitudes and up to 8
+    // unique blacklist entries we still keep at least 3 candidates; if the
+    // blacklist somehow covered everything we fall back to "anything but
+    // the previous magnitude" so we never deadlock.
+    ULONG candidates[TAP_POOL_SIZE];
+    ULONG candCount = 0;
+    for (ULONG i = 0; i < TAP_POOL_SIZE; i++) {
+        if (!excluded[i]) candidates[candCount++] = i;
+    }
+    if (candCount == 0) {
+        for (ULONG i = 0; i < TAP_POOL_SIZE; i++) {
+            if (i != g_LastMagnitudeIdx) candidates[candCount++] = i;
+        }
+        if (candCount == 0) {
+            // Pathological (TAP_POOL_SIZE == 1). Just take 0.
+            candidates[candCount++] = 0;
+        }
+    }
+
+    ULONG r = candidates[NextRandomU32() % candCount];
+
+    // Commit to history and to the "last pick" log field.
+    g_MagnitudeHistory[g_MagnitudeHistoryWritten % MAGNITUDE_HISTORY_MAX] = r;
+    g_MagnitudeHistoryWritten++;
     g_LastMagnitudeIdx = r;
     return pool[r];
 }
@@ -1573,29 +1638,41 @@ VOID WorkerThread(_In_ PVOID Context) {
                             LOG_INFO("Kill while P still held - skip restart");
                             lastRoundKills = roundKills;
                         } else {
+                            // 1) Pick this kill's P-hold length and tap-lead
+                            // time. Both are jittered every kill so the
+                            // press pattern is not periodic.
+                            ULONG holdMs = RandRange(KILL_HOLD_MIN_MS, KILL_HOLD_MAX_MS);
+                            ULONG leadMs = RandRange(TAP_LEAD_MIN_MS,  TAP_LEAD_MAX_MS);
+                            // Guarantee tap fits inside the hold window with
+                            // room for the down/up edges. Should never trip
+                            // given the constants above, but defend anyway.
+                            if (leadMs + NUMPAD_TAP_MS + 10 >= holdMs) {
+                                leadMs = (holdMs > NUMPAD_TAP_MS + 20)
+                                       ? (holdMs - NUMPAD_TAP_MS - 20) : 0;
+                            }
+
                             LARGE_INTEGER startT; KeQuerySystemTime(&startT);
-                            LONGLONG durTicks = (LONGLONG)KILL_HOLD_MS * 10000LL;
-                            LONGLONG leadTicks = (LONGLONG)TAP_BEFORE_HOLD_END_MS * 10000LL;
-                            // 1) P down (held for KILL_HOLD_MS).
+                            LONGLONG durTicks  = (LONGLONG)holdMs * 10000LL;
+                            LONGLONG leadTicks = (LONGLONG)leadMs * 10000LL;
+
+                            // 2) P down for holdMs.
                             InjectScan(KILL_SCAN_CODE, FALSE);
                             holdActive = TRUE;
                             holdUntil.QuadPart = startT.QuadPart + durTicks;
 
-                            // 2) Pick the yaw tap NOW (so the OPSEC state
-                            // updates immediately), but DELAY the actual
-                            // inject until TAP_BEFORE_HOLD_END_MS before the
-                            // P-up edge. The watchdog block below fires the
-                            // tap when KeQuerySystemTime() crosses tapAt.
+                            // 3) Queue the yaw tap; the watchdog block fires
+                            // it when KeQuerySystemTime() crosses tapAt.
                             pendingTapScan = PickRandomTapScan();
                             tapAt.QuadPart = holdUntil.QuadPart - leadTicks;
                             pendingTap = TRUE;
 
-                            LOG_INFO("KILL RK=%d->%d  P hold=%dms  tap scan=0x%X sign=%s magIdx=%u tap=%dms (scheduled %dms before P-up)",
+                            LOG_INFO("KILL RK=%d->%d  P hold=%ums  tap scan=0x%X sign=%s magIdx=%u (hist=%u) tap=%dms (scheduled %ums before P-up)",
                                      lastRoundKills, roundKills,
-                                     KILL_HOLD_MS, pendingTapScan,
+                                     holdMs, pendingTapScan,
                                      g_LastWasPositive ? "POS" : "NEG",
                                      g_LastMagnitudeIdx,
-                                     NUMPAD_TAP_MS, TAP_BEFORE_HOLD_END_MS);
+                                     g_MagnitudeHistoryWritten,
+                                     NUMPAD_TAP_MS, leadMs);
                             lastRoundKills = roundKills;
                         }
                     } else if (roundKills < lastRoundKills) {
@@ -1616,8 +1693,10 @@ VOID WorkerThread(_In_ PVOID Context) {
                         InjectScan(pendingTapScan, FALSE);
                         BOOLEAN stopDuringTap = WaitOrStop(NUMPAD_TAP_MS);
                         InjectScan(pendingTapScan, TRUE);
-                        LOG_INFO("yaw tap fired scan=0x%X (%dms before P-up)%s",
-                                 pendingTapScan, TAP_BEFORE_HOLD_END_MS,
+                        LONGLONG remainTicks = holdUntil.QuadPart - now.QuadPart;
+                        ULONG remainMs = (ULONG)(remainTicks / 10000LL);
+                        LOG_INFO("yaw tap fired scan=0x%X (~%ums before P-up)%s",
+                                 pendingTapScan, remainMs,
                                  stopDuringTap ? " stop-pending" : "");
                         pendingTap = FALSE;
                     }

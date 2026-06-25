@@ -29,10 +29,10 @@
 
 ### 🎯 F20Kit
 Kernel-mode round-kill detector. On every kill:
-- holds **P** for 2.5 s (cooldown window)
-- **300 ms before P-up** fires one tap from a **22-key** pool (Numpad 0–9 + F13–F24)
+- holds **P** for a **random 1500–3000 ms** (cooldown window)
+- **245–350 ms before P-up** (also randomized) fires one tap from a **22-key** pool (Numpad 0–9 + F13–F24)
 - **alternating yaw sign** (POS ↔ NEG every kill)
-- **excludes the symmetric counterpart** (no `+M / −M` pairs)
+- **excludes the last 3–8 magnitudes** (random window every pick, so the same magnitude never repeats within a 3-to-8-kill observation window regardless of sign)
 - magnitudes uniformly cover **[−35° … +35°]**
 
 The tap fires while P is still held so the cheat's MOUSE OVERRIDE yaw change lands inside the kill-action key window.
