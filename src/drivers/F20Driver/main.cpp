@@ -40,7 +40,7 @@
 #include <bcrypt.h>
 #pragma warning(pop)
 
-#define F20DRIVER_VERSION_STRING "v13 (randomized hold + tap lead + 3..8 magnitude history exclusion)"
+#define F20DRIVER_VERSION_STRING "v14 (auto-rebaseline on controller-ptr change + chain-read timeout)"
 
 // ---- CS2 offsets fallback (a2x/cs2-dumper main) ---------------------------
 // START.bat updates these from github:a2x/cs2-dumper into
@@ -1590,6 +1590,8 @@ VOID WorkerThread(_In_ PVOID Context) {
             LOG_INFO("client.dll=%p, entering inner loop", clientBase);
 
             INT32         lastRoundKills = -1;
+            INT64         lastCtrlPtr    = 0;    // last seen player controller ptr
+            ULONG         readFailRun    = 0;    // consecutive chain-read failures
             LARGE_INTEGER holdUntil      = {0};
             LARGE_INTEGER tapAt          = {0};   // when to fire the yaw tap
             USHORT        pendingTapScan = 0;
@@ -1622,10 +1624,44 @@ VOID WorkerThread(_In_ PVOID Context) {
                     }
                 }
 
+                // AUTO-REBASELINE: if the chain was failing for a while
+                // (user was on team-select / spawn / loading), then comes
+                // back -- drop the stale baseline so the first successful
+                // read re-establishes it. Otherwise the resumed roundKills
+                // jumps to whatever the server has, which can trip the
+                // "Suspicious delta > 5 resync" branch and silently skip
+                // the first kill after the gap.
+                if (!reads_ok) {
+                    readFailRun++;
+                    if (readFailRun == 100 && lastRoundKills >= 0) {
+                        // ~1 s of failing reads: forget baseline.
+                        LOG_INFO("Baseline lost (chain reads failed ~1 s, ctrl=0x%llX track=0x%llX)",
+                                 (unsigned long long)ctrl,
+                                 (unsigned long long)track);
+                        lastRoundKills = -1;
+                        lastCtrlPtr = 0;
+                    }
+                } else {
+                    readFailRun = 0;
+                    // AUTO-REBASELINE: if the player controller pointer
+                    // CHANGED (rejoin to a server / map flip / team swap
+                    // that respawns the controller), the new chain's
+                    // roundKills counter belongs to a different player
+                    // entity -- never carry the old baseline forward.
+                    if (lastCtrlPtr != 0 && lastCtrlPtr != ctrl) {
+                        LOG_INFO("Controller ptr changed 0x%llX -> 0x%llX, re-baselining",
+                                 (unsigned long long)lastCtrlPtr,
+                                 (unsigned long long)ctrl);
+                        lastRoundKills = -1;
+                    }
+                    lastCtrlPtr = ctrl;
+                }
+
                 if (reads_ok && roundKills >= 0 && roundKills <= 100) {
                     if (lastRoundKills < 0) {
                         lastRoundKills = roundKills;
-                        LOG_INFO("Baseline RK=%d", roundKills);
+                        LOG_INFO("Baseline RK=%d ctrl=0x%llX", roundKills,
+                                 (unsigned long long)ctrl);
                     } else if (roundKills > lastRoundKills) {
                         INT32 delta = roundKills - lastRoundKills;
                         if (delta > 5) {
