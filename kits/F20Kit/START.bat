@@ -396,10 +396,27 @@ if errorlevel 1 (
 echo.
 
 echo ====================================================
-echo  Driver loaded. In CS2 console:
-echo       WRITE IN CONSOLE UNBIND F20
-echo  On every kill: F20 held 2.5 sec + random Num 0-9 tap.
-echo  Make sure NumLock=ON on your keyboard before playing.
+echo  Driver loaded. F20Driver v10 - P hold + 22-key yaw pool
+echo ====================================================
+echo.
+echo  STEP 1. NumLock must be ON on your keyboard (LED lit).
+echo          Scan codes 0x47..0x52 only register as Numpad
+echo          digits when NumLock is ON; with NumLock OFF they
+echo          will inject as nav-cluster (Home/End/arrows/Ins/PgUp/PgDn).
+echo.
+echo  STEP 2. Open CS2 console (~) and paste this ONE line to
+echo          unbind every key the driver uses, so the game
+echo          itself never acts on them:
+echo.
+echo  unbind p; unbind F13; unbind F14; unbind F15; unbind F16; unbind F17; unbind F18; unbind F19; unbind F20; unbind F21; unbind F22; unbind F23; unbind F24; unbind KP_INS; unbind KP_END; unbind KP_DOWNARROW; unbind KP_PGDN; unbind KP_LEFTARROW; unbind KP_5; unbind KP_RIGHTARROW; unbind KP_HOME; unbind KP_UPARROW; unbind KP_PGUP
+echo.
+echo  STEP 3. Configure your cheat's yaw "Local view" / MOUSE
+echo          OVERRIDE binds to match the table from README.txt:
+echo          POS: Num1/2/4/6/8 + F13/15/17/19/21/23 -^> +1..+35
+echo          NEG: Num0/3/5/7/9 + F14/16/18/20/22/24 -^> -1..-35
+echo.
+echo  On every kill: P held 2.5 sec, then ONE alternating-sign
+echo  tap from the opposite-sign pool (no symmetric +M/-M pair).
 echo.
 echo  STOP: run STOP.bat (safe stop, then true unload if confirmed).
 echo ====================================================

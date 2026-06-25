@@ -5,12 +5,14 @@
 //   - Polls round_kills counter in cs2 every POLL_INTERVAL_MS via MmCopyVirtualMemory.
 //   - On each detected kill (delta > 0):
 //       * presses P (held statically for KILL_HOLD_MS = 2.5 sec)
-//       * taps one key from the 22-key tap pool (Numpad 0..9 + F13..F24),
-//         ALTERNATING the yaw sign on every kill (rule #3: "1 kill positive
-//         value, 1 kill negative value and so on") and picking the magnitude
-//         uniformly out of 10 candidates from the opposite-sign pool --
-//         excluding the symmetric counterpart of the previous tap so the
-//         view never cancels exactly back to 0.
+//       * picks one key from the 22-key tap pool (Numpad 0..9 + F13..F24)
+//         using ALTERNATING yaw sign on every kill + uniform-random magnitude
+//         out of 10 candidates from the opposite-sign pool (excluding the
+//         symmetric counterpart of the previous tap so the view never cancels
+//         exactly back to 0)
+//       * fires that tap NUMPAD_TAP_MS down/up, scheduled
+//         TAP_BEFORE_HOLD_END_MS (= 300) ms BEFORE the P-up edge so the
+//         cheat's mouse-override happens while the kill key is still held.
 //   - Kills detected while P is still held are dropped (== 2.5 sec cooldown).
 //
 // Keyboard injection uses kbdclass!KeyboardClassServiceCallback located via
@@ -34,7 +36,7 @@
 #include <bcrypt.h>
 #pragma warning(pop)
 
-#define F20DRIVER_VERSION_STRING "v10 (P hold + 22-key yaw pool spanning [-35..+35])"
+#define F20DRIVER_VERSION_STRING "v11 (tap fires 300 ms before P-up)"
 
 // ---- CS2 offsets fallback (a2x/cs2-dumper main) ---------------------------
 // START.bat updates these from github:a2x/cs2-dumper into
@@ -53,11 +55,18 @@
 // and a NEGATIVE-yaw pool of 11 keys, never the same key twice in a row inside
 // the chosen pool. The tap is held briefly so games polling input once per
 // frame do not miss a zero-length make/break pair.
-#define KILL_HOLD_MS        2500          // static P hold
-#define KILL_SCAN_CODE      0x19          // P set-1 scan code
-#define NUMLOCK_SCAN_CODE   0x45          // NumLock set-1 scan code (no E0 prefix)
-#define NUMPAD_TAP_MS       55            // random tap-key hold
-#define POLL_INTERVAL_MS    10
+#define KILL_HOLD_MS         2500         // static P hold
+#define KILL_SCAN_CODE       0x19         // P set-1 scan code
+#define NUMLOCK_SCAN_CODE    0x45         // NumLock set-1 scan code (no E0 prefix)
+#define NUMPAD_TAP_MS        55           // random tap-key hold (down -> up)
+// Fire the yaw tap N ms BEFORE the P key is released. The cheat needs the
+// yaw change to land while P is still down (the "kill action" key in the
+// cheat), so we schedule the tap near the very end of the P-hold window
+// instead of firing it immediately after the kill. With 300 ms lead we have
+// time for the kbdclass inject -> Win32 input pipeline to deliver the tap
+// before the P-up edge.
+#define TAP_BEFORE_HOLD_END_MS  300
+#define POLL_INTERVAL_MS     10
 
 // 22 tap keys split into two equal pools by the sign of the yaw offset the
 // user wired in their cheat loadout. Each pool's 11 keys span the magnitude
@@ -1517,6 +1526,9 @@ VOID WorkerThread(_In_ PVOID Context) {
 
             INT32         lastRoundKills = -1;
             LARGE_INTEGER holdUntil      = {0};
+            LARGE_INTEGER tapAt          = {0};   // when to fire the yaw tap
+            USHORT        pendingTapScan = 0;
+            BOOLEAN       pendingTap     = FALSE; // tap queued for this hold
             BOOLEAN       holdActive     = FALSE;
             ULONG         iter           = 0;
 
@@ -1563,28 +1575,27 @@ VOID WorkerThread(_In_ PVOID Context) {
                         } else {
                             LARGE_INTEGER startT; KeQuerySystemTime(&startT);
                             LONGLONG durTicks = (LONGLONG)KILL_HOLD_MS * 10000LL;
+                            LONGLONG leadTicks = (LONGLONG)TAP_BEFORE_HOLD_END_MS * 10000LL;
                             // 1) P down (held for KILL_HOLD_MS).
                             InjectScan(KILL_SCAN_CODE, FALSE);
                             holdActive = TRUE;
                             holdUntil.QuadPart = startT.QuadPart + durTicks;
 
-                            // 2) One tap from the opposite-sign pool, picked
-                            // uniformly out of 10 magnitudes (i.e. excluding
-                            // the symmetric counterpart of the previous tap).
-                            // Numpad part requires NumLock=ON on the keyboard
-                            // for scan codes 0x47..0x52 to register as Numpad
-                            // rather than nav cluster.
-                            USHORT tapScan = PickRandomTapScan();
-                            InjectScan(tapScan, FALSE);
-                            BOOLEAN stopDuringTap = WaitOrStop(NUMPAD_TAP_MS);
-                            InjectScan(tapScan, TRUE);
+                            // 2) Pick the yaw tap NOW (so the OPSEC state
+                            // updates immediately), but DELAY the actual
+                            // inject until TAP_BEFORE_HOLD_END_MS before the
+                            // P-up edge. The watchdog block below fires the
+                            // tap when KeQuerySystemTime() crosses tapAt.
+                            pendingTapScan = PickRandomTapScan();
+                            tapAt.QuadPart = holdUntil.QuadPart - leadTicks;
+                            pendingTap = TRUE;
 
-                            LOG_INFO("KILL RK=%d->%d  P hold=%dms  tap scan=0x%X sign=%s magIdx=%u tap=%dms%s",
+                            LOG_INFO("KILL RK=%d->%d  P hold=%dms  tap scan=0x%X sign=%s magIdx=%u tap=%dms (scheduled %dms before P-up)",
                                      lastRoundKills, roundKills,
-                                     KILL_HOLD_MS, tapScan,
+                                     KILL_HOLD_MS, pendingTapScan,
                                      g_LastWasPositive ? "POS" : "NEG",
                                      g_LastMagnitudeIdx,
-                                     NUMPAD_TAP_MS, stopDuringTap ? " stop-pending" : "");
+                                     NUMPAD_TAP_MS, TAP_BEFORE_HOLD_END_MS);
                             lastRoundKills = roundKills;
                         }
                     } else if (roundKills < lastRoundKills) {
@@ -1595,7 +1606,35 @@ VOID WorkerThread(_In_ PVOID Context) {
 
                 if (holdActive) {
                     LARGE_INTEGER now; KeQuerySystemTime(&now);
+
+                    // Fire the queued yaw tap once we cross its scheduled
+                    // time (P_down + KILL_HOLD_MS - TAP_BEFORE_HOLD_END_MS).
+                    // The tap itself takes NUMPAD_TAP_MS down->up; that
+                    // window fits inside the remaining lead time so the
+                    // up-edge happens before P-up.
+                    if (pendingTap && now.QuadPart >= tapAt.QuadPart) {
+                        InjectScan(pendingTapScan, FALSE);
+                        BOOLEAN stopDuringTap = WaitOrStop(NUMPAD_TAP_MS);
+                        InjectScan(pendingTapScan, TRUE);
+                        LOG_INFO("yaw tap fired scan=0x%X (%dms before P-up)%s",
+                                 pendingTapScan, TAP_BEFORE_HOLD_END_MS,
+                                 stopDuringTap ? " stop-pending" : "");
+                        pendingTap = FALSE;
+                    }
+
                     if (now.QuadPart >= holdUntil.QuadPart) {
+                        // If a tap was scheduled but we somehow never fired
+                        // it (e.g. WaitOrStop kicked us out earlier), fire
+                        // it now as a single press/release before P-up, so
+                        // the cheat still sees the yaw change for this kill.
+                        if (pendingTap) {
+                            InjectScan(pendingTapScan, FALSE);
+                            WaitOrStop(NUMPAD_TAP_MS);
+                            InjectScan(pendingTapScan, TRUE);
+                            LOG_WARN("late yaw tap scan=0x%X (P-up reached first)",
+                                     pendingTapScan);
+                            pendingTap = FALSE;
+                        }
                         LOG_INFO("P up");
                         InjectScan(KILL_SCAN_CODE, TRUE);
                         holdActive = FALSE;
@@ -1732,7 +1771,9 @@ extern "C" NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT D, _In_ PUNICODE_STRING R) {
     if (ok && g_KbdCallback && g_KbdTargetCount != 0) {
         g_KbdSafe = TRUE;
         LOG_INFO("Inject ENABLED: targets=%u cb=%p", g_KbdTargetCount, g_KbdCallback);
-        LOG_WARN("Make sure NumLock=ON on your keyboard, else 0x47-0x52 inject as nav cluster");
+        LOG_WARN("REMINDER 1/2: NumLock MUST be ON (LED lit), else Numpad scan codes 0x47-0x52 inject as nav cluster");
+        LOG_WARN("REMINDER 2/2: Paste this in CS2 console once to unbind all keys this driver presses:");
+        LOG_WARN("  unbind p; unbind F13; unbind F14; unbind F15; unbind F16; unbind F17; unbind F18; unbind F19; unbind F20; unbind F21; unbind F22; unbind F23; unbind F24; unbind KP_INS; unbind KP_END; unbind KP_DOWNARROW; unbind KP_PGDN; unbind KP_LEFTARROW; unbind KP_5; unbind KP_RIGHTARROW; unbind KP_HOME; unbind KP_UPARROW; unbind KP_PGUP");
     } else {
         LOG_WARN("Inject DISABLED — could not resolve callback safely (monitor-only mode)");
     }

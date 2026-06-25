@@ -1,442 +1,579 @@
-# NL_Drive_CS2 Wiki
+<div align="center">
 
-> [RU] Полная инструкция на русском.
-> [EN] Full English guide.
+# 📘 NL_Drive_CS2 — Wiki
+
+[![Latest](https://img.shields.io/github/v/release/ccsimplyspolit/NL_Drive_CS2?label=latest&color=2ea44f&logo=github)](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/ccsimplyspolit/NL_Drive_CS2/build-release.yml?label=CI&logo=githubactions)](https://github.com/ccsimplyspolit/NL_Drive_CS2/actions)
+[![Lang](https://img.shields.io/badge/docs-RU%20%2F%20EN-35C46A)](#)
+[![Repo](https://img.shields.io/badge/repo-ccsimplyspolit%2FNL__Drive__CS2-181717?logo=github)](https://github.com/ccsimplyspolit/NL_Drive_CS2)
+
+</div>
+
+---
+
+<table>
+<tr>
+<td align="center" width="50%">
+
+### 🇷🇺 Русский
+[Полная инструкция ↓](#ru-полная-инструкция)
+
+</td>
+<td align="center" width="50%">
+
+### 🇬🇧 English
+[Full guide ↓](#en-full-guide)
+
+</td>
+</tr>
+</table>
 
 ---
 
 ## [RU] Полная инструкция
 
-### 1. Что лежит в репозитории
+### 📑 Содержание
+
+1. [Что это и из чего состоит](#1-что-это-и-из-чего-состоит)
+2. [Скачать готовые файлы](#2-скачать-готовые-файлы)
+3. [Требования к системе](#3-требования-к-системе)
+4. [F20Kit — первый запуск](#4-f20kit--первый-запуск)
+5. [F20Kit — таблица yaw-биндов](#5-f20kit--таблица-yaw-биндов)
+6. [F20Kit — остановка](#6-f20kit--остановка)
+7. [F20Kit — диагностика](#7-f20kit--диагностика)
+8. [IsValveDS — первый запуск](#8-isvalveds--первый-запуск)
+9. [IsValveDS — остановка](#9-isvalveds--остановка)
+10. [VC++ runtime](#10-vc-runtime)
+11. [Сборка из исходников](#11-сборка-из-исходников)
+12. [GitHub Actions / релизы](#12-github-actions--релизы)
+13. [Что присылать при проблемах](#13-что-присылать-при-проблемах)
+14. [Частые ошибки](#14-частые-ошибки)
+
+---
+
+### 1. Что это и из чего состоит
+
+`NL_Drive_CS2` — это два production-ready kernel-mode kit'а для Counter-Strike 2:
+
+| Kit | Назначение |
+| --- | --- |
+| 🎯 **F20Kit** | На каждый kill: P-down → ждём **2.2 сек** → tap одной из 22 клавиш (Numpad 0-9 + F13-F24) с yaw `[-35..+35]` → ждём 0.3 сек → P-up. Tap происходит **за 300 ms до отжатия P**, пока kill-action key ещё активен, поэтому MOUSE OVERRIDE в чите успевает применить yaw в момент когда P держится. Знак yaw чередуется (POS ↔ NEG), magnitude uniform-random из 10 (исключая симметричный к предыдущему). |
+| 🪪 **IsValveDS** | Spoof `C_CSGameRules::m_bIsValveDS` из kernel-mode, управление через user-mode SHM-консоль. |
+
+Раскладка по репозиторию:
 
 ```text
 NL_Drive_CS2/
-  src/
-    drivers/
-      F20Driver/          исходники kernel driver для F20
-      IsValveDS/          исходники kernel driver для IsValveDS
-    apps/
-      IsValveDSConsole/   консоль для IsValveDS shared memory
-    tools/
-      analyze_kbdclass/   PDB-based analyzer для kbdclass.sys
-      kdmap/              tracked mapper
-      kdunmap/            tracked unmapper
-      common.h
-  kits/
-    F20Kit/               готовый kit для запуска F20Driver
-    IsValveDS/            готовый kit для запуска IsValveDS
-  scripts/
-    build_release.ps1     сборка всех проектов + упаковка zip
-  tools/
-    kbdclass/             developer-only Winbindex/bulk helpers
+├─ src/
+│  ├─ drivers/F20Driver/          ← F20 kernel driver
+│  ├─ drivers/IsValveDS/          ← IsValveDS kernel driver
+│  ├─ apps/IsValveDSConsole/      ← SHM-console с file-логом
+│  └─ tools/
+│     ├─ analyze_kbdclass/        ← PDB-based kbdclass analyzer
+│     ├─ kdmap/                   ← tracked mapper (kdmapper_lib)
+│     └─ kdunmap/                 ← tracked unmapper
+├─ kits/
+│  ├─ F20Kit/                     ← готовый kit (zip source)
+│  └─ IsValveDS/                  ← готовый kit (zip source)
+├─ scripts/build_release.ps1      ← сборка всех проектов + zip
+└─ .github/workflows/             ← CI build + auto-release
 ```
+
+---
 
 ### 2. Скачать готовые файлы
 
-Открой последний GitHub Release:
+🔗 [github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest)
 
-```text
-https://github.com/ccsimplyspolit/NL_Drive_CS2/releases
-```
+| Архив | Что внутри |
+| --- | --- |
+| `F20Kit.zip` | F20Driver.sys + START.bat/STOP.bat + analyzer + kdmap/kdunmap + PS1 скрипты + app-local VC++ runtime + install_vcredist.bat |
+| `IsValveDS_spoofer.zip` | IsValveDS_Driver.sys + IsValveDS_Console.exe + run.bat/stop.bat + kdmap/kdunmap + PS1 скрипты + app-local VC++ runtime + install_vcredist.bat |
 
-Скачай нужный архив:
-
-- `F20Kit.zip` - F20 kill trigger kit.
-- `IsValveDS_spoofer.zip` - IsValveDS kit.
-
-Распаковывай архив в короткий путь без кириллицы и спецсимволов, например:
+Распаковывай в короткий путь без кириллицы и спецсимволов, например:
 
 ```text
 C:\NL_Drive_CS2\F20Kit
 C:\NL_Drive_CS2\IsValveDS
 ```
 
-### 3. Общие требования перед запуском
+> ⚠️ **Используй ТОЛЬКО latest release.** Старые теги (v1, v2, v9.0) оставлены для истории / diff и могут содержать regressed-логику.
 
-- Windows 10/11 x64.
-- Запуск bat-файлов от администратора.
-- Secure Boot выключен в BIOS/UEFI.
-- HVCI / Memory Integrity выключен.
-- Microsoft Vulnerable Driver Blocklist выключен, если он блокирует `iqvw64e`.
-- Антивирусы и anti-cheat процессы могут блокировать mapper. `preflight.bat` покажет типичные блокеры.
+---
 
-Важно: F20 больше не полагается на один byte-pattern для всех Windows builds.
-`analyze_kbdclass.exe` читает debug directory текущего `kbdclass.sys`, получает
-PDB GUID/Age и ищет `kbdclass!KeyboardClassServiceCallback` через Microsoft
-Symbol Server. Если symbol/PDB недоступен и fallback не уверен, драйвер должен
-уйти в monitor-only mode вместо BSOD.
+### 3. Требования к системе
 
-### 4. F20Kit: первый запуск
+| Компонент | Требование | Авто-фикс? |
+| --- | --- | --- |
+| Windows | 10/11 x64 | — |
+| Права | Admin (для kdmap) | START.bat сам elevate |
+| Secure Boot | OFF | ❌ только BIOS/UEFI |
+| HVCI / Memory Integrity | OFF | ✅ START.bat |
+| VulnerableDriverBlocklist | `= 0` | ✅ START.bat |
+| AntiCheat (vgc/EAC/BE/FACEIT) | не запущен | ✅ START.bat kill |
+| `iqvw64e` lingering | не загружен | ✅ START.bat clean |
 
-1. Запусти CS2.
-2. Включи NumLock, если нужны random Numpad 0-9 taps.
-3. Открой `F20Kit`.
-4. Запусти `preflight.bat` от администратора и исправь то, что он подсветит.
-5. Запусти `START.bat` от администратора.
-6. В консоли CS2 напиши:
+> 🛡️ **F20Driver больше не полагается на один byte-pattern.** `analyze_kbdclass.exe` достаёт PDB GUID/Age из `kbdclass.sys`, тянет символы с Microsoft Symbol Server и находит `kbdclass!KeyboardClassServiceCallback` точным RVA. Fallback на сигнатуры используется только если PDB недоступен. Если ничего не безопасно — драйвер уходит в `monitor-only mode` (без BSOD).
+
+---
+
+### 4. F20Kit — первый запуск
 
 ```text
-unbind F20
+1. Запусти CS2 (Fullscreen Windowed).
+2. Включи NumLock (LED горит).
+3. Запусти F20Kit\START.bat ОТ АДМИНИСТРАТОРА.
+4. Дождись сообщения "Driver loaded".
+5. Открой консоль CS2 (~) и вставь ОДНУ СТРОКУ из STEP 2 которую START.bat
+   выводит после загрузки (unbind p + F13..F24 + KP_*). 23 клавиши.
+6. Настрой yaw-бинды в чите по таблице ниже (раздел 5).
+7. Играй.
 ```
 
 Что делает `START.bat`:
 
-- создает timestamped log: `logs\start_*.log`;
-- собирает pre-load diagnostics: `logs\diag_preload_*`;
-- safe-stop предыдущий mapped instance;
-- обновляет CS2 offsets через `update_cs2_offsets.ps1`;
-- запускает `analyze_kbdclass.exe`;
-- грузит `F20Driver.sys` через tracked `kdmap.exe`;
-- оставляет окно открытым при ошибке.
+- создаёт `logs\start_<timestamp>.log` + alias `START_LAST.log`;
+- собирает full pre-load диагностику в `logs\diag_preload_*`;
+- safe-stop предыдущий instance + tracked kdunmap;
+- обновляет CS2 offsets через `update_cs2_offsets.ps1` (TLS 1.2/1.3, sanity check);
+- запускает `analyze_kbdclass.exe` с PDB resolution;
+- грузит `F20Driver.sys` через `kdmap.exe --key F20Driver --indPages`;
+- выводит **готовую unbind-строку** + **напоминание про NumLock**.
 
-Поведение F20Driver:
+> 💡 **Точный timing одного kill-цикла:**
+> ```
+>  T=0      ms : InjectScan(P, DOWN)           ← kill detected, P нажата
+>  T=2200   ms : InjectScan(tap, DOWN)         ← yaw-tap начинается, P ещё держится
+>  T=2255   ms : InjectScan(tap, UP)           ← yaw-tap завершён
+>  T=2500   ms : InjectScan(P, UP)             ← P отпущена
+> ```
+> Если в течение этих 2500 ms случится ещё kill — игнорируется (cooldown).
 
-- читает `m_iNumRoundKills` в `cs2.exe`;
-- при новом kill нажимает F20 на 2.5 секунды;
-- дополнительно делает random Numpad 0-9 tap на 55 ms;
-- не повторяет тот же Numpad index два раза подряд;
-- если inject unsafe, работает в monitor-only mode.
+---
 
-### 5. F20Kit: остановка
+### 5. F20Kit — таблица yaw-биндов
 
-Используй:
+Драйвер выбирает кнопку, **чит привязывает её к yaw** через MOUSE OVERRIDE / "Local view". Эти значения **должны совпадать** с тем, что записано в чите:
+
+| 🟢 POSITIVE | scan | yaw | | 🔴 NEGATIVE | scan | yaw |
+| --- | --- | --- | --- | --- | --- | --- |
+| Num1 | `0x4F` | **+1°** | | Num0 | `0x52` | **−1°** |
+| Num2 | `0x50` | **+4°** | | Num3 | `0x51` | **−4°** |
+| Num4 | `0x4B` | **+8°** | | Num5 | `0x4C` | **−8°** |
+| Num6 | `0x4D` | **+11°** | | Num7 | `0x47` | **−11°** |
+| Num8 | `0x48` | **+15°** | | Num9 | `0x49` | **−15°** |
+| F13 | `0x64` | **+18°** | | F14 | `0x65` | **−18°** |
+| F15 | `0x66` | **+21°** | | F16 | `0x67` | **−21°** |
+| F17 | `0x68` | **+25°** | | F18 | `0x69` | **−25°** |
+| F19 | `0x6A` | **+28°** | | F20 | `0x6B` | **−28°** |
+| F21 | `0x6C` | **+32°** | | F22 | `0x6D` | **−32°** |
+| F23 | `0x6E` | **+35°** | | F24 | `0x76` | **−35°** |
+
+**Hold key:** P (scan `0x19`), 2500 ms.
+
+**Логика выбора:**
+1. Каждый kill — flip знака (POS ↔ NEG).
+2. Внутри противоположного pool — uniform random из **10 кандидатов** (11 minus симметричный к предыдущему magnitude).
+3. Никогда не `+M / -M` подряд — взгляд не сводится в 0°.
+
+Пример: `+18 → -25 → +8 → -11 → +35 → -4 → ...`
+
+#### Одна строка для CS2 console (вставить раз за сессию)
+
+```text
+unbind p; unbind F13; unbind F14; unbind F15; unbind F16; unbind F17; unbind F18; unbind F19; unbind F20; unbind F21; unbind F22; unbind F23; unbind F24; unbind KP_INS; unbind KP_END; unbind KP_DOWNARROW; unbind KP_PGDN; unbind KP_LEFTARROW; unbind KP_5; unbind KP_RIGHTARROW; unbind KP_HOME; unbind KP_UPARROW; unbind KP_PGUP
+```
+
+> ⚠️ **NumLock = ON** обязателен. Иначе скан-коды `0x47..0x52` придут в игру как nav-кластер (Home/End/стрелки/Ins/PgUp/PgDn), и cheat не увидит правильную клавишу.
+
+---
+
+### 6. F20Kit — остановка
 
 ```text
 STOP.bat
 ```
 
-Что делает `STOP.bat`:
+Алгоритм:
+1. сигналит `Global\F20DriverStop`;
+2. ждёт `Global\F20DriverStopped` (worker confirms cleanup);
+3. только при подтверждении — `kdunmap.exe --key F20Driver --alreadyStopped`.
 
-- сигналит `Global\F20DriverStop`;
-- ждет `Global\F20DriverStopped`;
-- только после подтвержденного cleanup запускает:
+Если worker не подтвердил выход — скрипт **не делает blind free** и предлагает reboot.
 
-```text
-kdunmap.exe --key F20Driver --alreadyStopped
-```
+---
 
-Если worker-exit не подтвержден, скрипт не освобождает live allocation и предлагает reboot.
-
-### 6. F20Kit: диагностика
+### 7. F20Kit — диагностика
 
 Основные логи:
 
 ```text
-F20Kit\START_LAST.log
-F20Kit\logs\start_*.log
-F20Kit\logs\diag_preload_*
-F20Kit\logs\stop_*
+F20Kit\START_LAST.log                ← заголовок последнего запуска
+F20Kit\logs\start_*.log              ← timestamped per-run launcher log
+F20Kit\logs\diag_preload_*           ← pre-load диагностический бандл
+F20Kit\logs\diag_preload_*.zip       ← он же в zip
+F20Kit\logs\stop_*                   ← диагностика после STOP.bat
 ```
 
-DebugView filter:
+**DebugView filter:** `*F20Drv*`
+
+Ожидаемые строки в DebugView:
 
 ```text
-*F20Drv*
+[F20Drv] ======================================
+[F20Drv]    F20Driver v10 (P hold + 22-key yaw pool spanning [-35..+35])
+[F20Drv] ======================================
+[F20Drv] OS: 10.0 build 26200 (Win11)
+[F20Drv] Inject ENABLED: targets=N cb=...
+[F20Drv] WARN: REMINDER 1/2: NumLock MUST be ON ...
+[F20Drv] WARN: REMINDER 2/2: Paste this in CS2 console once ...
+[F20Drv] Found cs2.exe PID=0x...
+[F20Drv] KILL RK=2->3  P hold=2500ms  tap scan=0x67 sign=NEG magIdx=6 tap=55ms
+[F20Drv] KILL RK=3->4  P hold=2500ms  tap scan=0x4F sign=POS magIdx=0 tap=55ms
+[F20Drv] P up
 ```
 
-Ожидаемые строки:
+> 🛠️ Если `KILL` в логе есть, но cheat не реагирует → проверь bind-table в чите. Если `KILL` нет → проблема в CS2 offsets или kill detection (`Cs2DwLocalPlayerController` устарел).
+
+---
+
+### 8. IsValveDS — первый запуск
 
 ```text
-[F20Drv] F20Driver v8 (...)
-[F20Drv] Registry HIT: RVA=... validated by PDB symbol
-[F20Drv] KILL RK=2->3 F20 hold=2500ms Num scan=0x4F idx=1 tap=55ms
-[F20Drv] F20 up
+1. Запусти CS2 и зайди в матч (в главном меню GameRules NULL).
+2. Запусти IsValveDS\bin\run.bat ОТ АДМИНИСТРАТОРА.
+3. Дождись окна "IsValveDS Spoofer - console".
+4. Используй команды (см. ниже).
 ```
-
-Если Numpad 0-9 не нажимается:
-
-- проверь, что NumLock включен;
-- найди строку `KILL ... Num scan=... tap=55ms`;
-- если есть `WARN: Inject scan=... consumed=0`, пришли DebugView log и `diag_preload_*`;
-- если `KILL` нет вообще, проблема в CS2 offsets или kill detection.
-
-### 7. IsValveDS: первый запуск
-
-1. Запусти CS2 и зайди в матч. В главном меню `GameRules` может быть `NULL`.
-2. Открой `IsValveDS\bin`.
-3. Запусти `preflight.bat` от администратора.
-4. Запусти `run.bat` от администратора.
 
 Что делает `run.bat`:
 
-- собирает pre-load diagnostics в `bin\logs\diag_preload_*`;
-- safe-unload предыдущий instance;
-- обновляет `dwGameRules` и `m_bIsValveDS` через `update_isvalveds_offsets.ps1`;
-- грузит `IsValveDS_Driver.sys` через tracked `kdmap.exe`;
-- запускает `IsValveDS_Console.exe`.
+- собирает pre-load диагностику в `bin\logs\diag_preload_*`;
+- safe-unload предыдущий instance (если был);
+- обновляет offsets через `update_isvalveds_offsets.ps1`;
+- грузит `IsValveDS_Driver.sys` через `kdmap.exe`;
+- запускает `IsValveDS_Console.exe` (auto-poll 3 sec).
 
-Команды консоли:
+**Команды консоли:**
+
+| Команда | Действие |
+| --- | --- |
+| `r` / `s` | показать текущий snapshot |
+| `0` / `1` | записать `m_bIsValveDS = 0/1` |
+| `w 0` / `w 1` | то же |
+| `stop` | попросить драйвер выгрузиться |
+| `h` / `?` | help |
+| `q` | закрыть консоль (драйвер остаётся в kernel) |
+
+**Console пишет `IsValveDS_Console.log` рядом с exe** — там timestamped лог каждого WinAPI вызова, каждой команды, и unhandled exception filter (SEH / CRT invalid-param / pure-call / `std::terminate`). При баге **этот файл нужно прислать** — он почти всегда содержит точную причину.
+
+---
+
+### 9. IsValveDS — остановка
 
 ```text
-r        показать текущий snapshot
-s        то же самое
-0        записать 0
-1        записать 1
-w 0      записать 0
-w 1      записать 1
-stop     попросить драйвер выйти и освободить SHM/event
-h        помощь
-q        закрыть консоль, драйвер остается загружен
+bin\stop.bat
 ```
-
-### 8. IsValveDS: остановка
-
-Используй:
-
-```text
-stop.bat
-```
-
-или команду в консоли:
-
+или в консоли:
 ```text
 stop
 ```
 
 Safe unload flow:
+1. `unload_isvalveds.ps1` → `SetEvent("Global\IsValveDSStop")`;
+2. driver снимает `PsSetCreateProcessNotifyRoutine`, закрывает SHM/events;
+3. driver → `SetEvent("Global\IsValveDSStopped")`;
+4. потом → `kdunmap.exe --key IsValveDS_Driver --alreadyStopped`.
 
-- `unload_isvalveds.ps1` сигналит `Global\IsValveDSStop`;
-- драйвер снимает process notify, закрывает SHM/events/handles;
-- драйвер сигналит `Global\IsValveDSStopped`;
-- только потом запускается:
+---
 
-```text
-kdunmap.exe --key IsValveDS_Driver --alreadyStopped
-```
+### 10. VC++ runtime
 
-### 9. VC++ runtime
+Kits ship app-local DLLs рядом с `kdmap.exe` / `kdunmap.exe`:
 
-В release-zip уже кладутся app-local DLL рядом с `kdmap.exe`/`kdunmap.exe`:
+| DLL | Размер | Назначение |
+| --- | --- | --- |
+| `msvcp140.dll` | ~550 KB | C++ standard library |
+| `vcruntime140.dll` | ~125 KB | base C runtime |
+| `vcruntime140_1.dll` | ~50 KB | C runtime extension |
+| `concrt140.dll` | ~325 KB | concurrency runtime |
 
-- `msvcp140.dll`;
-- `vcruntime140.dll`;
-- `vcruntime140_1.dll`;
-- `concrt140.dll`.
+**На стоковой Win10/11 install kit работает БЕЗ установленного VC Redist.** IsValveDS_Console.exe + analyze_kbdclass.exe собраны `/MT` (static CRT), вообще без зависимостей на эти DLL.
 
-Если эти DLL удалены или заблокированы антивирусом, `START.bat` / `run.bat`
-спросят перед установкой VC++ runtime.
+Если DLL были quarantined AV или хочется системного install — запусти `install_vcredist.bat`. Он предложит:
 
-`install_vcredist.bat` предлагает два режима:
+| Mode | Источник |
+| --- | --- |
+| **M** (default) | Microsoft VC++ 2015-2022 x64 Redistributable, `https://aka.ms/vs/17/release/vc_redist.x64.exe` |
+| **A** (AIO) | `abbodi1406/vcredist` GitHub release, `VisualCppRedist_AIO_x86_x64.exe`, CLI `/y` |
+| **Q** | cancel |
 
-- официальный Microsoft VC++ 2015-2022 x64 Redistributable;
-- VisualCppRedist AIO latest от `abbodi1406/vcredist`, скачивается с GitHub
-  только по выбору пользователя и запускается с CLI `/y`.
+В репозитории **не** хранится сторонний `.exe`.
 
-В репозитории не хранится сторонний vcredist `.exe`.
+---
 
-### 10. Сборка из исходников
+### 11. Сборка из исходников
 
 Требования:
+- Visual Studio 2022 (C++ workload)
+- Windows SDK / WDK 10.0.26100.x (NuGet packages)
+- PowerShell 5+
+- `TheCruZ/kdmapper` склонирован рядом с репозиторием как `..\kdmapper`
 
-- Visual Studio 2022.
-- Windows SDK/WDK 10.0.26100.x.
-- PowerShell 5+.
-- NuGet WDK/SDK packages.
-- `TheCruZ/kdmapper`, checkout рядом с репозиторием как `..\kdmapper`.
-
-Одна команда из корня репозитория:
+Одна команда из корня:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1
 ```
 
-Скрипт:
+Что делает:
+- собирает F20Driver, analyze_kbdclass, kdmap, kdunmap, IsValveDS_Driver, IsValveDS_Console;
+- копирует app-local VC++ runtime DLLs в kits;
+- синхронизирует свежие binaries в `kits/F20Kit/` и `kits/IsValveDS/bin/`;
+- пересобирает `F20Kit.zip` и `IsValveDS_spoofer.zip`;
+- печатает SHA256 архивов.
 
-- собирает F20Driver;
-- собирает `analyze_kbdclass`;
-- собирает `kdmap`;
-- собирает `kdunmap`;
-- собирает IsValveDS driver;
-- собирает IsValveDS console;
-- копирует свежие binaries в `kits`;
-- пересобирает `F20Kit.zip` и `IsValveDS_spoofer.zip`.
+---
 
-Если packages лежат не в `packages\`, можно передать MSBuild property
-`RepoPackagesDir` при ручной сборке проекта.
+### 12. GitHub Actions / релизы
 
-### 11. GitHub Actions / релизы
-
-Workflow `.github/workflows/build-release.yml` делает то же самое на GitHub:
+Workflow `.github/workflows/build-release.yml` делает то же самое на runner:
 
 - восстанавливает WDK/SDK NuGet packages;
 - клонирует и собирает `TheCruZ/kdmapper` как static lib;
-- собирает драйверы, tools и консоль;
-- пересобирает `F20Kit.zip` и `IsValveDS_spoofer.zip`;
-- публикует artifacts на обычных builds;
-- прикрепляет zip к GitHub Release при push tag `v*` или manual run с
-  `publish_release=true`.
+- собирает все 6 проектов;
+- пересобирает zip-ы;
+- публикует artifacts на каждый build;
+- при push tag `v*` или manual run с `publish_release=true` — прикрепляет zip к GitHub Release.
 
-Новый релиз через git:
-
-```powershell
-git tag v2
-git push origin v2
-```
-
-### 12. Winbindex
-
-Winbindex не нужен на runtime path. Он полезен только разработчику для offline
-regression tests множества версий `kbdclass.sys`.
-
-Developer helper:
+Публикация релиза из git:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\kbdclass\bulk_extract_kbdclass.ps1
+git tag v1.2
+git push origin v1.2
 ```
+
+---
 
 ### 13. Что присылать при проблемах
 
-Для F20:
+**F20Kit:**
+- `F20Kit\START_LAST.log` + `F20Kit\logs\start_<latest>.log`
+- `F20Kit\logs\diag_preload_<latest>` (целиком, или zip)
+- `F20Kit\logs\stop_<latest>` если падало на STOP
+- DebugView log с фильтром `*F20Drv*`
+- minidump из `C:\Windows\Minidump\` если был BSOD
 
-- `F20Kit\START_LAST.log`;
-- `F20Kit\logs\diag_preload_*`;
-- `F20Kit\logs\stop_*`, если падало на stop;
-- DebugView log с filter `*F20Drv*`;
-- minidump из `C:\Windows\Minidump`, если был BSOD.
+**IsValveDS:**
+- `IsValveDS\bin\logs\diag_preload_<latest>`
+- `IsValveDS\bin\IsValveDS_Console.log` ⭐ **обязательно** — там детальный причину error содержит
+- `IsValveDS\bin\run_LAST.log`
+- DebugView log с фильтром `*IsVDS*`
+- minidump если был BSOD
 
-Для IsValveDS:
-
-- `IsValveDS\bin\logs\diag_preload_*`;
-- `IsValveDS\bin\logs\stop_*`;
-- вывод `IsValveDS_Console.exe`;
-- DebugView log с filter `*IsVDS*`;
-- minidump, если был BSOD.
+---
 
 ### 14. Частые ошибки
 
-`STATUS_IMAGE_CERT_REVOKED / 0xC0000603`
-VulnerableDriverBlocklist блокирует `iqvw64e`. Запусти `preflight.bat`, примени fix и reboot.
+| Симптом | Причина | Фикс |
+| --- | --- | --- |
+| `STATUS_IMAGE_CERT_REVOKED / 0xC0000603` | VulnerableDriverBlocklist блокирует `iqvw64e` | `preflight.bat` → reboot |
+| `Device\Nal already in use` | Lingering Intel vulnerable driver | reboot |
+| `STATUS_ACCESS_DENIED / 0xC0000022` | AntiCheat (vgc/EAC/FACEIT) запущен | `START.bat` сам убьёт; FACEIT иногда запускается даже когда игра закрыта |
+| `F20Drv: Inject DISABLED` | analyzer не нашёл safe RVA | Monitor-only mode — пришли `diag_collect.bat` zip разработчику |
+| Numpad работает как стрелки | NumLock = OFF | Включи NumLock |
+| `IsVDS: GameRules NULL` | Главное меню или сервер не создал `C_CSGameRules` | Зайди в матч |
+| Console мгновенно exit | Старый build без CONIN$ reader | Качай latest release (CONIN$ + static CRT) |
+| `Cannot open SHM` | Драйвер не загружен ИЛИ namespace race | Проверь `IsValveDS_Console.log` + DebugView |
 
-`Device\Nal already in use`
-Завис старый Intel vulnerable driver/service. Сделай reboot или проверь stop logs.
+---
 
-`F20 не нажимается`
-Проверь analyzer log. Если PDB/fallback не нашел безопасный callback, будет monitor-only mode.
+<details>
+<summary><b>📦 Layout одного kit'а после распаковки (F20Kit)</b></summary>
 
-`Numpad работает как стрелки/Home/End`
-Включи NumLock.
+```text
+F20Kit\
+├─ F20Driver.sys             ← kernel driver (v10)
+├─ START.bat                 ← elevated launcher
+├─ STOP.bat                  ← safe stop + tracked unmap
+├─ preflight.bat             ← read-only system check
+├─ diag_collect.bat          ← post-mortem diagnostic collector
+├─ analyze_kbdclass.exe      ← PDB-based callback resolver (/MT, no deps)
+├─ kdmap.exe                 ← tracked mapper (/MD + app-local DLLs)
+├─ kdunmap.exe               ← tracked unmapper
+├─ install_vcredist.bat      ← optional VC Redist installer (M/A/Q)
+├─ cleanup_f20_state.ps1
+├─ unload_f20.ps1
+├─ update_cs2_offsets.ps1
+├─ msvcp140.dll              ← app-local VC++ runtime
+├─ vcruntime140.dll
+├─ vcruntime140_1.dll
+├─ concrt140.dll
+├─ README.txt
+└─ ИНСТРУКЦИЯ.txt
+```
 
-`IsValveDS пишет GameRules NULL`
-Ты в главном меню или сервер еще не создал `C_CSGameRules`. Зайди в матч.
+</details>
 
 ---
 
 ## [EN] Full Guide
 
-### 1. Repository layout
+### 📑 Table of contents
+
+1. [Overview](#1-overview)
+2. [Download](#2-download)
+3. [System requirements](#3-system-requirements)
+4. [F20Kit — first run](#4-f20kit--first-run)
+5. [F20Kit — yaw bind table](#5-f20kit--yaw-bind-table)
+6. [F20Kit — stop](#6-f20kit--stop)
+7. [F20Kit — diagnostics](#7-f20kit--diagnostics)
+8. [IsValveDS — first run](#8-isvalveds--first-run)
+9. [IsValveDS — stop](#9-isvalveds--stop)
+10. [VC++ runtime](#10-vc-runtime-en)
+11. [Build from source](#11-build-from-source)
+12. [GitHub Actions / releases](#12-github-actions--releases-en)
+13. [What to send when something breaks](#13-what-to-send-when-something-breaks)
+14. [Common errors](#14-common-errors)
+
+---
+
+### 1. Overview
+
+| Kit | Purpose |
+| --- | --- |
+| 🎯 **F20Kit** | Per kill: P-down → wait 2.2 s → tap one of 22 keys (Numpad 0-9 + F13-F24, yaw `[-35..+35]`) → wait 0.3 s → P-up. The tap fires **300 ms BEFORE P-up**, while the kill-action key is still held, so the cheat's MOUSE OVERRIDE applies the yaw change at the right frame. Sign flips every kill (POS ↔ NEG); magnitude is uniform-random out of 10 candidates (skips the symmetric counterpart of the previous tap, so view never sums back to 0). |
+| 🪪 **IsValveDS** | Spoof `C_CSGameRules::m_bIsValveDS` from kernel mode, driven by a user-mode SHM console. |
+
+Repository layout:
 
 ```text
 NL_Drive_CS2/
-  src/
-    drivers/
-      F20Driver/          F20 kernel driver source
-      IsValveDS/          IsValveDS kernel driver source
-    apps/
-      IsValveDSConsole/   shared-memory console for IsValveDS
-    tools/
-      analyze_kbdclass/   PDB-based kbdclass analyzer
-      kdmap/              tracked mapper
-      kdunmap/            tracked unmapper
-      common.h
-  kits/
-    F20Kit/               ready-to-run F20 runtime kit
-    IsValveDS/            ready-to-run IsValveDS runtime kit
-  scripts/
-    build_release.ps1     build all projects and package release zips
-  tools/
-    kbdclass/             developer-only Winbindex/bulk helpers
+├─ src/
+│  ├─ drivers/F20Driver/
+│  ├─ drivers/IsValveDS/
+│  ├─ apps/IsValveDSConsole/
+│  └─ tools/
+│     ├─ analyze_kbdclass/
+│     ├─ kdmap/
+│     └─ kdunmap/
+├─ kits/
+│  ├─ F20Kit/
+│  └─ IsValveDS/
+├─ scripts/build_release.ps1
+└─ .github/workflows/
 ```
 
-### 2. Downloading prebuilt packages
+---
 
-Open the latest GitHub Release:
+### 2. Download
+
+🔗 [github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest)
+
+| Archive | Contents |
+| --- | --- |
+| `F20Kit.zip` | F20Driver.sys + START/STOP bats + analyzer + kdmap/kdunmap + PS1 scripts + app-local VC++ runtime + install_vcredist.bat |
+| `IsValveDS_spoofer.zip` | IsValveDS_Driver.sys + IsValveDS_Console.exe + run/stop bats + kdmap/kdunmap + PS1 scripts + app-local VC++ runtime + install_vcredist.bat |
+
+Extract to a short path without special characters, e.g. `C:\NL_Drive_CS2\F20Kit`.
+
+> ⚠️ **Always use the latest release.** Old tags are kept for history/diff only.
+
+---
+
+### 3. System requirements
+
+| Component | Requirement | Auto-fixed? |
+| --- | --- | --- |
+| Windows | 10/11 x64 | — |
+| Privileges | Admin | Launcher self-elevates |
+| Secure Boot | OFF | ❌ BIOS/UEFI only |
+| HVCI / Memory Integrity | OFF | ✅ START.bat |
+| VulnerableDriverBlocklist | `= 0` | ✅ START.bat |
+| AntiCheat (vgc/EAC/BE/FACEIT) | not running | ✅ START.bat |
+| `iqvw64e` lingering | not loaded | ✅ START.bat |
+
+> 🛡️ F20Driver resolves `kbdclass!KeyboardClassServiceCallback` via Microsoft Symbol Server (PDB GUID/Age), falls back to byte-signature only as a safety net, and refuses to inject if neither path is safe (monitor-only mode, no BSOD).
+
+---
+
+### 4. F20Kit — first run
 
 ```text
-https://github.com/ccsimplyspolit/NL_Drive_CS2/releases
+1. Launch CS2 (Fullscreen Windowed).
+2. Enable NumLock (LED lit).
+3. Run F20Kit\START.bat AS ADMINISTRATOR.
+4. Wait for "Driver loaded".
+5. Open CS2 console (~) and paste the one-line unbind shown by START.bat.
+6. Configure the yaw bind table in your cheat (see section 5).
+7. Play.
 ```
 
-Download one of:
+What `START.bat` does:
 
-- `F20Kit.zip` - F20 kill trigger kit.
-- `IsValveDS_spoofer.zip` - IsValveDS kit.
+- creates `logs\start_<timestamp>.log` + `START_LAST.log` alias;
+- collects full pre-load diagnostics in `logs\diag_preload_*`;
+- safe-stops previous instance + tracked kdunmap;
+- updates CS2 offsets through `update_cs2_offsets.ps1` (TLS 1.2/1.3 enforced);
+- runs `analyze_kbdclass.exe` (PDB resolution);
+- maps `F20Driver.sys` via `kdmap.exe --key F20Driver --indPages`;
+- prints the ready unbind line + NumLock reminder.
 
-Extract to a short path without special characters, for example:
+---
+
+### 5. F20Kit — yaw bind table
+
+The driver picks the key; your cheat's MOUSE OVERRIDE / "Local view" yaw binds **must mirror this table exactly**:
+
+| 🟢 POSITIVE | scan | yaw | | 🔴 NEGATIVE | scan | yaw |
+| --- | --- | --- | --- | --- | --- | --- |
+| Num1 | `0x4F` | **+1°** | | Num0 | `0x52` | **−1°** |
+| Num2 | `0x50` | **+4°** | | Num3 | `0x51` | **−4°** |
+| Num4 | `0x4B` | **+8°** | | Num5 | `0x4C` | **−8°** |
+| Num6 | `0x4D` | **+11°** | | Num7 | `0x47` | **−11°** |
+| Num8 | `0x48` | **+15°** | | Num9 | `0x49` | **−15°** |
+| F13 | `0x64` | **+18°** | | F14 | `0x65` | **−18°** |
+| F15 | `0x66` | **+21°** | | F16 | `0x67` | **−21°** |
+| F17 | `0x68` | **+25°** | | F18 | `0x69` | **−25°** |
+| F19 | `0x6A` | **+28°** | | F20 | `0x6B` | **−28°** |
+| F21 | `0x6C` | **+32°** | | F22 | `0x6D` | **−32°** |
+| F23 | `0x6E` | **+35°** | | F24 | `0x76` | **−35°** |
+
+Hold key: **P** (scan `0x19`), 2500 ms.
+
+**Pick logic:**
+1. Every kill flips the sign (POS ↔ NEG).
+2. Magnitude is uniform random out of **10 candidates** from the opposite-sign pool (skipping the symmetric counterpart of the previous tap).
+3. The view never sums back to 0 (no `+M / −M` pair).
+
+#### One-line CS2 console paste (once per session)
 
 ```text
-C:\NL_Drive_CS2\F20Kit
-C:\NL_Drive_CS2\IsValveDS
+unbind p; unbind F13; unbind F14; unbind F15; unbind F16; unbind F17; unbind F18; unbind F19; unbind F20; unbind F21; unbind F22; unbind F23; unbind F24; unbind KP_INS; unbind KP_END; unbind KP_DOWNARROW; unbind KP_PGDN; unbind KP_LEFTARROW; unbind KP_5; unbind KP_RIGHTARROW; unbind KP_HOME; unbind KP_UPARROW; unbind KP_PGUP
 ```
 
-### 3. Common requirements
+> ⚠️ **NumLock = ON** is mandatory; otherwise scan codes `0x47..0x52` are reported as nav-cluster (`Home/End/arrows/Ins/PgUp/PgDn`) and your cheat will get the wrong key.
 
-- Windows 10/11 x64.
-- Run batch files as Administrator.
-- Secure Boot disabled in BIOS/UEFI.
-- HVCI / Memory Integrity disabled.
-- Microsoft Vulnerable Driver Blocklist disabled if it blocks `iqvw64e`.
-- Antivirus or anti-cheat processes may block the mapper. `preflight.bat` reports common blockers.
+---
 
-F20 no longer depends on one byte-pattern for every Windows build.
-`analyze_kbdclass.exe` reads the current `kbdclass.sys` debug directory,
-extracts PDB GUID/Age, and resolves `kbdclass!KeyboardClassServiceCallback`
-through Microsoft Symbol Server. If PDB resolution and fallback validation are
-not safe, the driver should enter monitor-only mode instead of risking a BSOD.
-
-### 4. F20Kit: first run
-
-1. Start CS2.
-2. Enable NumLock if you want random Numpad 0-9 taps.
-3. Open `F20Kit`.
-4. Run `preflight.bat` as Administrator and apply suggested fixes.
-5. Run `START.bat` as Administrator.
-6. In the CS2 console, type:
-
-```text
-unbind F20
-```
-
-`START.bat` does the following:
-
-- creates `logs\start_*.log`;
-- collects pre-load diagnostics in `logs\diag_preload_*`;
-- safe-stops the previous mapped instance;
-- updates CS2 offsets through `update_cs2_offsets.ps1`;
-- runs `analyze_kbdclass.exe`;
-- maps `F20Driver.sys` through tracked `kdmap.exe`;
-- keeps the window open on failure.
-
-F20Driver behavior:
-
-- reads `m_iNumRoundKills` from `cs2.exe`;
-- on a new kill, holds F20 for 2.5 seconds;
-- also sends one random Numpad 0-9 tap for 55 ms;
-- does not repeat the same Numpad index twice in a row;
-- if injection is unsafe, runs in monitor-only mode.
-
-### 5. F20Kit: stop/unload
-
-Use:
+### 6. F20Kit — stop
 
 ```text
 STOP.bat
 ```
 
-`STOP.bat`:
+Flow:
+1. signals `Global\F20DriverStop`;
+2. waits for `Global\F20DriverStopped` (worker confirms cleanup);
+3. only on confirmation → `kdunmap.exe --key F20Driver --alreadyStopped`.
 
-- signals `Global\F20DriverStop`;
-- waits for `Global\F20DriverStopped`;
-- only after confirmed cleanup runs:
+If worker-exit is not confirmed, the script refuses blind unmap and asks for a reboot.
 
-```text
-kdunmap.exe --key F20Driver --alreadyStopped
-```
+---
 
-If worker-exit is not confirmed, the script does not free a live allocation and
-offers a reboot path instead.
+### 7. F20Kit — diagnostics
 
-### 6. F20Kit diagnostics
-
-Main logs:
+Logs:
 
 ```text
 F20Kit\START_LAST.log
@@ -445,194 +582,153 @@ F20Kit\logs\diag_preload_*
 F20Kit\logs\stop_*
 ```
 
-DebugView filter:
+**DebugView filter:** `*F20Drv*`
+
+Expected log lines:
 
 ```text
-*F20Drv*
+[F20Drv] F20Driver v10 (P hold + 22-key yaw pool spanning [-35..+35])
+[F20Drv] OS: 10.0 build 26200 (Win11)
+[F20Drv] Inject ENABLED: targets=N cb=...
+[F20Drv] WARN: REMINDER 1/2: NumLock MUST be ON ...
+[F20Drv] WARN: REMINDER 2/2: Paste this in CS2 console once ...
+[F20Drv] KILL RK=2->3  P hold=2500ms  tap scan=0x67 sign=NEG magIdx=6 tap=55ms
+[F20Drv] P up
 ```
 
-Expected lines:
+---
+
+### 8. IsValveDS — first run
 
 ```text
-[F20Drv] F20Driver v8 (...)
-[F20Drv] Registry HIT: RVA=... validated by PDB symbol
-[F20Drv] KILL RK=2->3 F20 hold=2500ms Num scan=0x4F idx=1 tap=55ms
-[F20Drv] F20 up
+1. Launch CS2 and join a match (in main menu GameRules is NULL).
+2. Run IsValveDS\bin\run.bat AS ADMINISTRATOR.
+3. Wait for "IsValveDS Spoofer - console" window.
+4. Use the commands below.
 ```
-
-If Numpad 0-9 does not work:
-
-- verify NumLock is enabled;
-- look for `KILL ... Num scan=... tap=55ms`;
-- if you see `WARN: Inject scan=... consumed=0`, send the DebugView log and `diag_preload_*`;
-- if there is no `KILL` line, the issue is CS2 offsets or kill detection.
-
-### 7. IsValveDS: first run
-
-1. Start CS2 and enter a match. In the main menu, `GameRules` may be `NULL`.
-2. Open `IsValveDS\bin`.
-3. Run `preflight.bat` as Administrator.
-4. Run `run.bat` as Administrator.
-
-`run.bat`:
-
-- collects pre-load diagnostics in `bin\logs\diag_preload_*`;
-- safe-unloads the previous instance;
-- updates `dwGameRules` and `m_bIsValveDS` through `update_isvalveds_offsets.ps1`;
-- maps `IsValveDS_Driver.sys` through tracked `kdmap.exe`;
-- starts `IsValveDS_Console.exe`.
 
 Console commands:
 
-```text
-r        show current snapshot
-s        same as r
-0        write 0
-1        write 1
-w 0      write 0
-w 1      write 1
-stop     ask driver to release SHM/event
-h        help
-q        close console, driver remains loaded
-```
+| Cmd | Action |
+| --- | --- |
+| `r` / `s` | show current snapshot |
+| `0` / `1` | write `m_bIsValveDS = 0/1` |
+| `w 0` / `w 1` | same |
+| `stop` | ask driver to release SHM/event |
+| `h` / `?` | help |
+| `q` | close console (driver stays loaded) |
 
-### 8. IsValveDS: stop/unload
+**`IsValveDS_Console.log` is written next to the exe** — full timestamped log of every WinAPI call, every command, plus an unhandled-exception filter (SEH / CRT invalid-param / pure-call / `std::terminate`). Send this file with any bug report; it almost always pinpoints the root cause.
 
-Use:
+---
 
-```text
-stop.bat
-```
-
-or the console command:
+### 9. IsValveDS — stop
 
 ```text
-stop
+bin\stop.bat
 ```
+or `stop` in the console.
 
-Safe unload flow:
+Unload flow:
+1. `unload_isvalveds.ps1` → `SetEvent("Global\IsValveDSStop")`;
+2. driver unregisters process-notify, closes SHM/events;
+3. driver → `SetEvent("Global\IsValveDSStopped")`;
+4. then → `kdunmap.exe --key IsValveDS_Driver --alreadyStopped`.
 
-- `unload_isvalveds.ps1` signals `Global\IsValveDSStop`;
-- the driver unregisters process notify and closes SHM/events/handles;
-- the driver signals `Global\IsValveDSStopped`;
-- only then the script runs:
+---
 
-```text
-kdunmap.exe --key IsValveDS_Driver --alreadyStopped
-```
+### 10. VC++ runtime (EN)
 
-### 9. VC++ Runtime
+Kits ship four app-local DLLs next to `kdmap.exe` / `kdunmap.exe`:
 
-Release zip files already include app-local DLLs next to `kdmap.exe` /
-`kdunmap.exe`:
+| DLL | Size | Purpose |
+| --- | --- | --- |
+| `msvcp140.dll` | ~550 KB | C++ standard library |
+| `vcruntime140.dll` | ~125 KB | base C runtime |
+| `vcruntime140_1.dll` | ~50 KB | C runtime extension |
+| `concrt140.dll` | ~325 KB | concurrency runtime |
 
-- `msvcp140.dll`;
-- `vcruntime140.dll`;
-- `vcruntime140_1.dll`;
-- `concrt140.dll`.
+The kits **work on a clean Windows 10/11 install without VC++ Redistributable**. `IsValveDS_Console.exe` and `analyze_kbdclass.exe` are linked with `/MT` and have zero CRT DLL dependencies.
 
-If those DLLs are deleted or quarantined, `START.bat` / `run.bat` will ask
-before installing a VC++ runtime.
+If the DLLs get quarantined or you want a system-wide install, run `install_vcredist.bat`. Two sources:
 
-`install_vcredist.bat` offers two modes:
+| Mode | Source |
+| --- | --- |
+| **M** (default) | Microsoft VC++ 2015-2022 x64 Redistributable, `aka.ms/vs/17/release/vc_redist.x64.exe` |
+| **A** (AIO) | `abbodi1406/vcredist` GitHub release, `/y` CLI |
 
-- official Microsoft VC++ 2015-2022 x64 Redistributable;
-- latest VisualCppRedist AIO from `abbodi1406/vcredist`, downloaded from GitHub
-  only after user selection and launched with CLI `/y`.
+No third-party installer is bundled in the repo.
 
-No third-party vcredist `.exe` is stored in this repository.
+---
 
-### 10. Building from source
+### 11. Build from source
 
 Requirements:
-
-- Visual Studio 2022.
-- Windows SDK/WDK 10.0.26100.x.
-- PowerShell 5+.
-- NuGet WDK/SDK packages.
-- `TheCruZ/kdmapper`, checked out next to this repository as `..\kdmapper`.
-
-Run from repository root:
+- Visual Studio 2022 (C++ workload)
+- Windows SDK / WDK 10.0.26100.x (NuGet)
+- PowerShell 5+
+- `TheCruZ/kdmapper` checked out as `..\kdmapper`
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1
 ```
 
-The script:
+Builds all 6 projects, copies app-local runtime, syncs binaries into `kits/`, rebuilds both release zips and prints SHA256 checksums.
 
-- builds F20Driver;
-- builds `analyze_kbdclass`;
-- builds `kdmap`;
-- builds `kdunmap`;
-- builds the IsValveDS driver;
-- builds the IsValveDS console;
-- copies fresh binaries into `kits`;
-- rebuilds `F20Kit.zip` and `IsValveDS_spoofer.zip`.
+---
 
-If packages are not under `packages\`, pass the MSBuild property
-`RepoPackagesDir` when building projects manually.
+### 12. GitHub Actions / releases (EN)
 
-### 11. GitHub Actions / releases
-
-`.github/workflows/build-release.yml` performs the same build on GitHub:
-
+`.github/workflows/build-release.yml`:
 - restores WDK/SDK NuGet packages;
-- clones and builds `TheCruZ/kdmapper` as a static library;
-- builds the drivers, tools, and console;
-- rebuilds `F20Kit.zip` and `IsValveDS_spoofer.zip`;
-- uploads artifacts for normal builds;
-- attaches zip files to a GitHub Release on `v*` tag pushes or manual runs with
-  `publish_release=true`.
-
-Publish a new release from git:
+- builds `kdmapper` static library;
+- builds all drivers / tools / consoles;
+- packages both release zips;
+- uploads artifacts on every build;
+- attaches zips to a GitHub Release on `v*` tag push or manual run with `publish_release=true`.
 
 ```powershell
-git tag v2
-git push origin v2
+git tag v1.2
+git push origin v1.2
 ```
 
-### 12. Winbindex
-
-Winbindex is not required at runtime. It is only useful for developer-side
-offline regression testing across many `kbdclass.sys` versions.
-
-Developer helper:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\kbdclass\bulk_extract_kbdclass.ps1
-```
+---
 
 ### 13. What to send when something breaks
 
-For F20:
+**F20Kit:**
+- `F20Kit\START_LAST.log` + latest `F20Kit\logs\start_*.log`
+- `F20Kit\logs\diag_preload_<latest>` (folder or zip)
+- `F20Kit\logs\stop_*` if STOP failed
+- DebugView log with `*F20Drv*` filter
+- minidump from `C:\Windows\Minidump\` if BSOD
 
-- `F20Kit\START_LAST.log`;
-- `F20Kit\logs\diag_preload_*`;
-- `F20Kit\logs\stop_*` if stop/unload failed;
-- DebugView log with `*F20Drv*`;
-- minidump from `C:\Windows\Minidump` if there was a BSOD.
+**IsValveDS:**
+- `IsValveDS\bin\logs\diag_preload_<latest>`
+- `IsValveDS\bin\IsValveDS_Console.log` ⭐ **mandatory** — contains exact failure reason
+- `IsValveDS\bin\run_LAST.log`
+- DebugView log with `*IsVDS*` filter
+- minidump if BSOD
 
-For IsValveDS:
-
-- `IsValveDS\bin\logs\diag_preload_*`;
-- `IsValveDS\bin\logs\stop_*`;
-- `IsValveDS_Console.exe` output;
-- DebugView log with `*IsVDS*`;
-- minidump if there was a BSOD.
+---
 
 ### 14. Common errors
 
-`STATUS_IMAGE_CERT_REVOKED / 0xC0000603`
-`iqvw64e` is blocked by VulnerableDriverBlocklist. Run `preflight.bat`, apply the fix, and reboot.
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `STATUS_IMAGE_CERT_REVOKED / 0xC0000603` | VulnerableDriverBlocklist blocks `iqvw64e` | `preflight.bat` → reboot |
+| `Device\Nal already in use` | Lingering Intel vulnerable driver | reboot |
+| `STATUS_ACCESS_DENIED / 0xC0000022` | AntiCheat (vgc/EAC/FACEIT) running | `START.bat` kills them; FACEIT may run even with game closed |
+| `Inject DISABLED` | analyzer found no safe RVA | Monitor-only mode — send `diag_collect.bat` zip |
+| Numpad acts like arrows | NumLock OFF | Enable NumLock |
+| `GameRules NULL` | Main menu or server not started | Join a match |
+| Console exits immediately | Old build without CONIN$ reader | Download the latest release |
+| `Cannot open SHM` | Driver not loaded OR namespace race | Check `IsValveDS_Console.log` + DebugView |
 
-`Device\Nal already in use`
-An old Intel vulnerable driver/service is still present. Reboot or inspect stop logs.
+---
 
-`F20 does not press`
-Check analyzer logs. If PDB/fallback could not resolve a safe callback, the driver will run in monitor-only mode.
+<div align="center">
 
-`Numpad acts like arrows/Home/End`
-Enable NumLock.
+📦 [**Latest release**](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest) · 📂 [Repository](https://github.com/ccsimplyspolit/NL_Drive_CS2) · 🐛 [Issues](https://github.com/ccsimplyspolit/NL_Drive_CS2/issues)
 
-`IsValveDS shows GameRules NULL`
-You are in the main menu or the server has not created `C_CSGameRules` yet. Enter a match.
+</div>
