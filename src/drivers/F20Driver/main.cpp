@@ -40,7 +40,7 @@
 #include <bcrypt.h>
 #pragma warning(pop)
 
-#define F20DRIVER_VERSION_STRING "v14 (auto-rebaseline on controller-ptr change + chain-read timeout)"
+#define F20DRIVER_VERSION_STRING "v15 (FPS-friendly poll 25 ms + inject self-recovery)"
 
 // ---- CS2 offsets fallback (a2x/cs2-dumper main) ---------------------------
 // START.bat updates these from github:a2x/cs2-dumper into
@@ -80,7 +80,15 @@
 #define TAP_LEAD_MIN_MS      245
 #define TAP_LEAD_MAX_MS      350
 
-#define POLL_INTERVAL_MS     10
+// Poll rate. The cs2 memory chain (dwLocalPlayerController -> tracking ->
+// roundKills) is read every POLL_INTERVAL_MS via MmCopyVirtualMemory. At
+// 10 ms (100 Hz) some users reported FPS dips during long matches -- 100
+// cross-process kernel-mode reads per second is a lot of memory-subsystem
+// traffic when cs2 is at the same time hammering its own working set in
+// the render thread. 25 ms (40 Hz) still detects every kill well before
+// the 1.5..3.0 s P-hold window, so we never miss a kill, but the read
+// volume drops 4x.
+#define POLL_INTERVAL_MS     25
 
 // 22 tap keys split into two equal pools by the sign of the yaw offset the
 // user wired in their cheat loadout. Each pool's 11 keys span the magnitude
@@ -1400,8 +1408,34 @@ static BOOLEAN InitKbdTargets(void) {
 // ============================================================================
 // Injection — gated by g_KbdSafe. Safe-mode = no-op.
 // ============================================================================
+// Inject self-recovery: previously a single SEH exception inside any kbdclass
+// callback permanently disabled injection until the next kdmap. That hid
+// transient issues (kbdclass busy / a single corrupt target) as "driver
+// stopped working". Now we remember the failure timestamp and re-enable
+// after KBD_RECOVERY_MS. If we get another exception within that window
+// we leave it off and double the back-off, so a truly broken target can't
+// spin us. Reset back-off on a successful inject.
+#define KBD_RECOVERY_MS_INITIAL  5000
+#define KBD_RECOVERY_MS_MAX      300000
+static LARGE_INTEGER g_KbdDisabledAt = {0};
+static ULONG         g_KbdBackoffMs  = KBD_RECOVERY_MS_INITIAL;
+
 static void InjectScan(USHORT scanCode, BOOLEAN keyup) {
-    if (!g_KbdSafe || !g_KbdCallback || g_KbdTargetCount == 0) return;
+    if (!g_KbdCallback || g_KbdTargetCount == 0) return;
+
+    // If inject was previously disabled by an exception, see whether the
+    // back-off window has elapsed; if so, re-arm and try once more.
+    if (!g_KbdSafe) {
+        LARGE_INTEGER now; KeQuerySystemTime(&now);
+        LONGLONG sinceTicks = now.QuadPart - g_KbdDisabledAt.QuadPart;
+        LONGLONG backoffTicks = (LONGLONG)g_KbdBackoffMs * 10000LL;
+        if (sinceTicks < backoffTicks) return;
+        LOG_WARN("Inject re-enabling after %u ms back-off (attempting recovery)",
+                 g_KbdBackoffMs);
+        g_KbdSafe = TRUE;
+    }
+
+    BOOLEAN sawException = FALSE;
 
     for (ULONG i = 0; i < g_KbdTargetCount; i++) {
         PDEVICE_OBJECT dev = g_KbdTargets[i].Device;
@@ -1419,9 +1453,14 @@ static void InjectScan(USHORT scanCode, BOOLEAN keyup) {
         __try {
             g_KbdCallback(dev, &d, &d + 1, &consumed);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            LOG_ERROR("Inject SEH exception 0x%X target=%u dev=%p - disabling inject",
-                      GetExceptionCode(), i, dev);
+            ULONG code = GetExceptionCode();
+            KeLowerIrql(old);
+            sawException = TRUE;
+            KeQuerySystemTime(&g_KbdDisabledAt);
+            LOG_ERROR("Inject SEH 0x%X target=%u dev=%p - disabling for %u ms",
+                      code, i, dev, g_KbdBackoffMs);
             g_KbdSafe = FALSE;
+            break;
         }
         KeLowerIrql(old);
 
@@ -1429,8 +1468,17 @@ static void InjectScan(USHORT scanCode, BOOLEAN keyup) {
             LOG_WARN("Inject scan=0x%X flags=0x%X target=%u unit=%u consumed=%u",
                      scanCode, d.Flags, i, d.UnitId, consumed);
         }
+    }
 
-        if (!g_KbdSafe) break;
+    if (sawException) {
+        // Exponential back-off, capped, so a permanently broken target
+        // does not keep generating exceptions every kill.
+        ULONG nextBackoff = g_KbdBackoffMs * 2;
+        if (nextBackoff > KBD_RECOVERY_MS_MAX) nextBackoff = KBD_RECOVERY_MS_MAX;
+        g_KbdBackoffMs = nextBackoff;
+    } else {
+        // Healthy inject -- reset back-off.
+        g_KbdBackoffMs = KBD_RECOVERY_MS_INITIAL;
     }
 }
 
@@ -1603,7 +1651,9 @@ VOID WorkerThread(_In_ PVOID Context) {
                 if (InterlockedOr(&g_cs2Exiting, 0)) break;
                 iter++;
 
-                if ((iter % 1200) == 0) {
+                // MZ sanity check ~ once every 12 seconds at the current
+                // POLL_INTERVAL_MS (480 * 25 ms = 12 s).
+                if ((iter % 480) == 0) {
                     USHORT mzCheck = 0;
                     if (!NT_SUCCESS(ReadProcMem(proc, clientBase, &mzCheck, sizeof(mzCheck))) ||
                         mzCheck != 0x5A4D) {
@@ -1633,8 +1683,9 @@ VOID WorkerThread(_In_ PVOID Context) {
                 // the first kill after the gap.
                 if (!reads_ok) {
                     readFailRun++;
-                    if (readFailRun == 100 && lastRoundKills >= 0) {
-                        // ~1 s of failing reads: forget baseline.
+                    // ~1 second worth of failed iterations at the current
+                    // POLL_INTERVAL_MS (40 * 25 ms = 1 s).
+                    if (readFailRun == 40 && lastRoundKills >= 0) {
                         LOG_INFO("Baseline lost (chain reads failed ~1 s, ctrl=0x%llX track=0x%llX)",
                                  (unsigned long long)ctrl,
                                  (unsigned long long)track);
