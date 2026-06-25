@@ -19,6 +19,12 @@
 //   - Kills detected while P is still held are dropped (cooldown == the
 //     randomized hold length of the active kill).
 //
+// Operator note: start the kit BEFORE joining a server. The worker uses a
+// lean read path with NO mid-session re-resolve (no MZ recheck, no
+// controller-ptr diff, no read-fail timeout). Those checks were the cause
+// of FPS dips on heavier maps. If kills aren't being detected, rejoin
+// once and the driver will baseline cleanly from the next read.
+//
 // Keyboard injection uses kbdclass!KeyboardClassServiceCallback located via
 // a usermode analyzer (analyze_kbdclass.exe) that writes the RVA to
 // HKLM\SOFTWARE\F20Driver. If the registry entry is missing/stale the driver
@@ -40,7 +46,7 @@
 #include <bcrypt.h>
 #pragma warning(pop)
 
-#define F20DRIVER_VERSION_STRING "v15 (FPS-friendly poll 25 ms + inject self-recovery)"
+#define F20DRIVER_VERSION_STRING "v16 (lean worker, 100 ms poll, no mid-session re-resolve)"
 
 // ---- CS2 offsets fallback (a2x/cs2-dumper main) ---------------------------
 // START.bat updates these from github:a2x/cs2-dumper into
@@ -81,14 +87,20 @@
 #define TAP_LEAD_MAX_MS      350
 
 // Poll rate. The cs2 memory chain (dwLocalPlayerController -> tracking ->
-// roundKills) is read every POLL_INTERVAL_MS via MmCopyVirtualMemory. At
-// 10 ms (100 Hz) some users reported FPS dips during long matches -- 100
-// cross-process kernel-mode reads per second is a lot of memory-subsystem
-// traffic when cs2 is at the same time hammering its own working set in
-// the render thread. 25 ms (40 Hz) still detects every kill well before
-// the 1.5..3.0 s P-hold window, so we never miss a kill, but the read
-// volume drops 4x.
-#define POLL_INTERVAL_MS     25
+// roundKills) is read every POLL_INTERVAL_MS via MmCopyVirtualMemory.
+// Even at 25 ms (40 Hz) some users on heavier maps saw FPS dips, because
+// three back-to-back cross-process kernel-mode reads compete with cs2's
+// render-thread page traffic. 100 ms (10 Hz) means 30 reads/s. Worst-case
+// kill detection latency is still ~100 ms, far below the randomized
+// 1500..3000 ms P-hold window, so we never miss a kill.
+//
+// USER GUIDANCE that goes with this: start the driver BEFORE joining the
+// server. We no longer try to recover the baseline mid-session (no
+// controller-ptr re-baseline, no read-fail timeout, no client.dll MZ
+// re-check) -- those checks were exactly what made the worker thrash on
+// memory access and tank FPS. If the kit didn't latch onto a match, just
+// rejoin and it will baseline cleanly.
+#define POLL_INTERVAL_MS     100
 
 // 22 tap keys split into two equal pools by the sign of the yaw offset the
 // user wired in their cheat loadout. Each pool's 11 keys span the magnitude
@@ -1637,30 +1649,28 @@ VOID WorkerThread(_In_ PVOID Context) {
             }
             LOG_INFO("client.dll=%p, entering inner loop", clientBase);
 
+            // Lean state. No controller-ptr tracking, no read-fail
+            // timeout, no iteration counter for periodic MZ check --
+            // those were the source of FPS dips on weaker boxes. If the
+            // chain ever stops resolving, we silently skip ticks; if
+            // the player's controller is respawned by a server rejoin,
+            // we'll only fire after the new roundKills exceeds the old
+            // baseline, which is fine because the user is told to start
+            // the driver BEFORE joining a server.
             INT32         lastRoundKills = -1;
-            INT64         lastCtrlPtr    = 0;    // last seen player controller ptr
-            ULONG         readFailRun    = 0;    // consecutive chain-read failures
             LARGE_INTEGER holdUntil      = {0};
             LARGE_INTEGER tapAt          = {0};   // when to fire the yaw tap
             USHORT        pendingTapScan = 0;
             BOOLEAN       pendingTap     = FALSE; // tap queued for this hold
             BOOLEAN       holdActive     = FALSE;
-            ULONG         iter           = 0;
 
             while (IsProcessAlive(proc) && !WaitOrStop(0)) {
                 if (InterlockedOr(&g_cs2Exiting, 0)) break;
-                iter++;
 
-                // MZ sanity check ~ once every 12 seconds at the current
-                // POLL_INTERVAL_MS (480 * 25 ms = 12 s).
-                if ((iter % 480) == 0) {
-                    USHORT mzCheck = 0;
-                    if (!NT_SUCCESS(ReadProcMem(proc, clientBase, &mzCheck, sizeof(mzCheck))) ||
-                        mzCheck != 0x5A4D) {
-                        LOG_WARN("client.dll MZ check failed mid-session"); break;
-                    }
-                }
-
+                // Lean read path: one chain (controller -> tracking ->
+                // roundKills) per tick, no MZ re-check, no controller-ptr
+                // diffing, no read-fail timeouts. Failed reads are silently
+                // skipped this tick.
                 BOOLEAN reads_ok = FALSE;
                 INT32 roundKills = 0;
                 INT64 ctrl = 0, track = 0;
@@ -1674,45 +1684,10 @@ VOID WorkerThread(_In_ PVOID Context) {
                     }
                 }
 
-                // AUTO-REBASELINE: if the chain was failing for a while
-                // (user was on team-select / spawn / loading), then comes
-                // back -- drop the stale baseline so the first successful
-                // read re-establishes it. Otherwise the resumed roundKills
-                // jumps to whatever the server has, which can trip the
-                // "Suspicious delta > 5 resync" branch and silently skip
-                // the first kill after the gap.
-                if (!reads_ok) {
-                    readFailRun++;
-                    // ~1 second worth of failed iterations at the current
-                    // POLL_INTERVAL_MS (40 * 25 ms = 1 s).
-                    if (readFailRun == 40 && lastRoundKills >= 0) {
-                        LOG_INFO("Baseline lost (chain reads failed ~1 s, ctrl=0x%llX track=0x%llX)",
-                                 (unsigned long long)ctrl,
-                                 (unsigned long long)track);
-                        lastRoundKills = -1;
-                        lastCtrlPtr = 0;
-                    }
-                } else {
-                    readFailRun = 0;
-                    // AUTO-REBASELINE: if the player controller pointer
-                    // CHANGED (rejoin to a server / map flip / team swap
-                    // that respawns the controller), the new chain's
-                    // roundKills counter belongs to a different player
-                    // entity -- never carry the old baseline forward.
-                    if (lastCtrlPtr != 0 && lastCtrlPtr != ctrl) {
-                        LOG_INFO("Controller ptr changed 0x%llX -> 0x%llX, re-baselining",
-                                 (unsigned long long)lastCtrlPtr,
-                                 (unsigned long long)ctrl);
-                        lastRoundKills = -1;
-                    }
-                    lastCtrlPtr = ctrl;
-                }
-
                 if (reads_ok && roundKills >= 0 && roundKills <= 100) {
                     if (lastRoundKills < 0) {
                         lastRoundKills = roundKills;
-                        LOG_INFO("Baseline RK=%d ctrl=0x%llX", roundKills,
-                                 (unsigned long long)ctrl);
+                        LOG_INFO("Baseline RK=%d", roundKills);
                     } else if (roundKills > lastRoundKills) {
                         INT32 delta = roundKills - lastRoundKills;
                         if (delta > 5) {

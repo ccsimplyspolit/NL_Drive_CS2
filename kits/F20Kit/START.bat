@@ -396,8 +396,15 @@ if errorlevel 1 (
 echo.
 
 echo ====================================================
-echo  Driver loaded. F20Driver v10 - P hold + 22-key yaw pool
+echo  Driver loaded. F20Driver v16 - lean worker (100 ms poll)
 echo ====================================================
+echo.
+echo  STEP 0. !!! IMPORTANT !!!
+echo          START THIS DRIVER ^*BEFORE^* JOINING A SERVER.
+echo          The worker does NOT mid-session re-resolve cs2 chain
+echo          (no FPS-killing memory rechecks). If you start while
+echo          already on a server / mid-match and kills are not
+echo          detected, just rejoin the server once.
 echo.
 echo  STEP 1. NumLock must be ON on your keyboard (LED lit).
 echo          Scan codes 0x47..0x52 only register as Numpad
