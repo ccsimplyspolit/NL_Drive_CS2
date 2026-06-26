@@ -1,15 +1,21 @@
 <div align="center">
 
-# NL_Drive_CS2
+# 🎯 NL_Drive_CS2
 
-**Kernel-mode Counter-Strike 2 helper kits — kill-trigger yaw injector + `m_bIsValveDS` spoofer.**
+**Production-grade Counter-Strike 2 kernel kits.**
+Kill-triggered yaw injector + kernel-mode `m_bIsValveDS` spoofer with full diagnostics.
 
-[![Latest release](https://img.shields.io/github/v/release/ccsimplyspolit/NL_Drive_CS2?label=latest&color=2ea44f&logo=github)](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/ccsimplyspolit/NL_Drive_CS2/total?color=2ea44f&logo=github)](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D4?logo=windows)](https://www.microsoft.com/en-us/windows)
-[![Build](https://img.shields.io/github/actions/workflow/status/ccsimplyspolit/NL_Drive_CS2/build-release.yml?label=CI&logo=githubactions)](https://github.com/ccsimplyspolit/NL_Drive_CS2/actions)
-[![Docs](https://img.shields.io/badge/docs-RU%20%2F%20EN-35C46A)](docs/WIKI.md)
-[![License](https://img.shields.io/badge/license-research-lightgrey)](#disclaimer)
+[![Latest release](https://img.shields.io/github/v/release/ccsimplyspolit/NL_Drive_CS2?label=latest&color=2ea44f&logo=github&style=for-the-badge)](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/ccsimplyspolit/NL_Drive_CS2/total?color=2ea44f&logo=github&style=for-the-badge)](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/ccsimplyspolit/NL_Drive_CS2/build-release.yml?label=CI&logo=githubactions&style=for-the-badge)](https://github.com/ccsimplyspolit/NL_Drive_CS2/actions)
+
+[![Windows](https://img.shields.io/badge/Windows-10%2F11_x64-0078D4?style=flat-square&logo=windows)](#)
+[![Kernel](https://img.shields.io/badge/mode-kernel-red?style=flat-square)](#)
+[![C++17](https://img.shields.io/badge/C++-17-blue?style=flat-square&logo=cplusplus)](#)
+[![WDK](https://img.shields.io/badge/WDK-10.0.26100-orange?style=flat-square)](#)
+[![No_VC_Redist](https://img.shields.io/badge/no_VC++_Redist_needed-green?style=flat-square)](#-vc-runtime)
+[![Docs](https://img.shields.io/badge/docs-RU%20%2F%20EN-35C46A?style=flat-square)](docs/WIKI.md)
+[![License](https://img.shields.io/badge/license-research-lightgrey?style=flat-square)](#%EF%B8%8F-disclaimer)
 
 ![hero](docs/assets/readme-hero.png)
 
@@ -18,6 +24,22 @@
 > [!IMPORTANT]
 > **Always use the latest GitHub Release.** Old tags stay for diff/history only.
 > Бери только последний релиз. Старые теги — для истории.
+
+> [!CAUTION]
+> **Start the driver BEFORE joining a server.** v16 worker uses a lean read path with no mid-session re-resolve — that's what removes the FPS dips earlier versions had. If you start it after joining and kills don't fire, rejoin once.
+
+---
+
+## 📦 Download
+
+| Asset | What's inside |
+| --- | --- |
+| [📥 **F20Kit.zip**](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest) | F20Driver.sys + START/STOP + analyzer + kdmap/kdunmap + install_vcredist.bat + app-local VC++ runtime |
+| [📥 **IsValveDS_spoofer.zip**](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest) | IsValveDS_Driver.sys + IsValveDS_Console.exe + run/stop + kdmap/kdunmap + install_vcredist.bat + app-local VC++ runtime |
+
+- 📚 Full guide (RU + EN): [`docs/WIKI.md`](docs/WIKI.md)
+- 🌐 GitHub Wiki mirror: [Wiki](https://github.com/ccsimplyspolit/NL_Drive_CS2/wiki)
+- 🐛 Bug reports: [Issues](https://github.com/ccsimplyspolit/NL_Drive_CS2/issues)
 
 ---
 
@@ -28,26 +50,30 @@
 <td width="50%" valign="top">
 
 ### 🎯 F20Kit
-Kernel-mode round-kill detector. On every kill:
-- holds **P** for a **random 1500–3000 ms** (cooldown window)
-- **245–350 ms before P-up** (also randomized) fires one tap from a **22-key** pool (Numpad 0–9 + F13–F24)
-- **alternating yaw sign** (POS ↔ NEG every kill)
-- **excludes the last 3–8 magnitudes** (random window every pick, so the same magnitude never repeats within a 3-to-8-kill observation window regardless of sign)
-- magnitudes uniformly cover **[−35° … +35°]**
 
-The tap fires while P is still held so the cheat's MOUSE OVERRIDE yaw change lands inside the kill-action key window.
+Kernel-mode round-kill detector. **On every kill:**
+- 🔻 holds **`P`** for a **random 1500–3000 ms**
+- 🎲 **245–350 ms before P-up** (also randomized) fires one tap from a **22-key pool** (Numpad 0–9 + F13–F24)
+- ↔️ **alternating yaw sign** (POS ↔ NEG every kill)
+- 🚫 **excludes the last 3–8 magnitudes** from history (random window each pick — no repeat magnitude within 3–8 kills, no `+M/−M` pairs)
+- 📐 magnitudes uniformly cover **[−35° … +35°]**
 
-Injects via `kbdclass!KeyboardClassServiceCallback` resolved through Microsoft PDB symbols first, byte-pattern fallback second, and falls back to monitor-only if nothing is safe.
+The tap fires while `P` is still held so the cheat's `MOUSE OVERRIDE` yaw change lands in the kill-action key window.
+
+Injects through `kbdclass!KeyboardClassServiceCallback` resolved via Microsoft **PDB symbols** first, byte-pattern fallback second, and falls back to **monitor-only** mode if neither path is safe.
 
 </td>
 <td width="50%" valign="top">
 
 ### 🪪 IsValveDS spoofer
+
 Kernel-mode `C_CSGameRules::m_bIsValveDS` flipper, driven from a user-mode console.
-- shared-memory + named-event control plane (no IRP)
-- re-resolves `cs2.exe` → `client.dll` → `dwGameRules` → field every iteration
-- console writes a **full diagnostic log** next to the exe
-- survives `cs2.exe` restart and map flip
+
+- 🧵 SHM + named event control plane (**no IRP**)
+- 🔁 re-resolves `cs2.exe → client.dll → dwGameRules → field` every iteration
+- 🪵 console writes a **full diagnostic log** (`IsValveDS_Console.log`) next to the exe — every WinAPI call with `FormatMessage`, SEH/CRT exception filter
+- ♻️ survives cs2 restart and map flip
+- 🔒 named-object paths line up byte-for-byte between kernel (`\BaseNamedObjects\IsValveDS*`) and user (Win32 `Global\IsValveDS*`) — works on hardened Windows builds without the implicit `\BaseNamedObjects\Global` symlink
 
 </td>
 </tr>
@@ -57,50 +83,60 @@ Kernel-mode `C_CSGameRules::m_bIsValveDS` flipper, driven from a user-mode conso
 
 ## 🚀 Quick Start
 
+```mermaid
+flowchart LR
+  R[📥 Latest Release] --> E[📂 Extract zip<br/>to short path]
+  E --> A[🔐 Run START.bat<br/>as Administrator]
+  A --> P[📋 Paste unbind line<br/>in CS2 console]
+  P --> N[⌨️ NumLock = ON]
+  N --> J[🎮 Join server, play]
+```
+
 | Step | What to do |
 | ---- | ---------- |
 | **1** | Download the latest release: [📦 Releases](https://github.com/ccsimplyspolit/NL_Drive_CS2/releases/latest) |
-| **2** | Extract `F20Kit.zip` and/or `IsValveDS_spoofer.zip` to a short path, e.g. `C:\NL_Drive_CS2\F20Kit` |
+| **2** | Extract `F20Kit.zip` / `IsValveDS_spoofer.zip` to a short path, e.g. `C:\NL_Drive_CS2\F20Kit` |
 | **3** | Right-click → **Run as Administrator**: `START.bat` (F20Kit) or `bin\run.bat` (IsValveDS) |
 | **4** | Read the post-load message — it gives you the **one-line CS2 console paste** and the NumLock reminder |
+| **5** | (F20Kit) Configure your cheat's yaw bind list to match the [table below](#%EF%B8%8F-yaw-bind-table) |
 
 > [!NOTE]
-> **No Visual C++ Redistributable required.** Kits ship the runtime DLLs app-local. If they get quarantined, run `install_vcredist.bat` once.
+> **No Visual C++ Redistributable required.** Kits ship the runtime DLLs app-local. If AV quarantines them, run `install_vcredist.bat` once (Microsoft or AIO source).
 
 ---
 
-## ⌨️ F20Kit — yaw bind table (configure these in your cheat)
+## ⌨️ Yaw bind table
 
-> The driver picks the key; your cheat's `MOUSE OVERRIDE` / yaw `Local view` bind list must map each key to the matching yaw value.
+> The driver picks the key — your cheat's `MOUSE OVERRIDE` / yaw `Local view` bind list must map each key to the exact yaw value below.
 
 <table>
-<tr><th>Pool</th><th colspan="11">Key → yaw (deg)</th></tr>
-<tr>
-<td>🟢 <b>POSITIVE</b></td>
-<td>Num1<br>+1</td><td>Num2<br>+4</td><td>Num4<br>+8</td><td>Num6<br>+11</td><td>Num8<br>+15</td>
-<td>F13<br>+18</td><td>F15<br>+21</td><td>F17<br>+25</td><td>F19<br>+28</td><td>F21<br>+32</td><td>F23<br>+35</td>
-</tr>
-<tr>
-<td>🔴 <b>NEGATIVE</b></td>
-<td>Num0<br>−1</td><td>Num3<br>−4</td><td>Num5<br>−8</td><td>Num7<br>−11</td><td>Num9<br>−15</td>
-<td>F14<br>−18</td><td>F16<br>−21</td><td>F18<br>−25</td><td>F20<br>−28</td><td>F22<br>−32</td><td>F24<br>−35</td>
-</tr>
+<tr><th colspan="3">🟢 POSITIVE pool (11 keys)</th><th colspan="3">🔴 NEGATIVE pool (11 keys)</th></tr>
+<tr><th>Key</th><th>Scan</th><th>Yaw</th><th>Key</th><th>Scan</th><th>Yaw</th></tr>
+<tr><td>Num1</td><td><code>0x4F</code></td><td><b>+1°</b></td><td>Num0</td><td><code>0x52</code></td><td><b>−1°</b></td></tr>
+<tr><td>Num2</td><td><code>0x50</code></td><td><b>+4°</b></td><td>Num3</td><td><code>0x51</code></td><td><b>−4°</b></td></tr>
+<tr><td>Num4</td><td><code>0x4B</code></td><td><b>+8°</b></td><td>Num5</td><td><code>0x4C</code></td><td><b>−8°</b></td></tr>
+<tr><td>Num6</td><td><code>0x4D</code></td><td><b>+11°</b></td><td>Num7</td><td><code>0x47</code></td><td><b>−11°</b></td></tr>
+<tr><td>Num8</td><td><code>0x48</code></td><td><b>+15°</b></td><td>Num9</td><td><code>0x49</code></td><td><b>−15°</b></td></tr>
+<tr><td>F13</td><td><code>0x64</code></td><td><b>+18°</b></td><td>F14</td><td><code>0x65</code></td><td><b>−18°</b></td></tr>
+<tr><td>F15</td><td><code>0x66</code></td><td><b>+21°</b></td><td>F16</td><td><code>0x67</code></td><td><b>−21°</b></td></tr>
+<tr><td>F17</td><td><code>0x68</code></td><td><b>+25°</b></td><td>F18</td><td><code>0x69</code></td><td><b>−25°</b></td></tr>
+<tr><td>F19</td><td><code>0x6A</code></td><td><b>+28°</b></td><td>F20</td><td><code>0x6B</code></td><td><b>−28°</b></td></tr>
+<tr><td>F21</td><td><code>0x6C</code></td><td><b>+32°</b></td><td>F22</td><td><code>0x6D</code></td><td><b>−32°</b></td></tr>
+<tr><td>F23</td><td><code>0x6E</code></td><td><b>+35°</b></td><td>F24</td><td><code>0x76</code></td><td><b>−35°</b></td></tr>
 </table>
 
-Hold key: **P** (scan `0x19`), held for **2500 ms** on each accepted kill.
+**Hold key:** `P` (scan `0x19`), held for **randomized 1500–3000 ms** per kill.
 
-### One-line CS2 console paste (run once per session)
+### One-line CS2 console paste
 
-Paste this into the CS2 console so the game itself never reacts to the driver's keypresses — they exist only as triggers for the cheat:
+Paste this once per session into the CS2 console so the game itself doesn't react to the driver's keypresses — they exist only as triggers for your cheat's `MOUSE OVERRIDE`:
 
 ```text
 unbind p; unbind F13; unbind F14; unbind F15; unbind F16; unbind F17; unbind F18; unbind F19; unbind F20; unbind F21; unbind F22; unbind F23; unbind F24; unbind KP_INS; unbind KP_END; unbind KP_DOWNARROW; unbind KP_PGDN; unbind KP_LEFTARROW; unbind KP_5; unbind KP_RIGHTARROW; unbind KP_HOME; unbind KP_UPARROW; unbind KP_PGUP
 ```
 
-> [!WARNING]
-> **NumLock MUST be ON** (LED lit). Scan codes `0x47..0x52` only register as Numpad digits with NumLock on; otherwise they inject as nav-cluster (`Home/End/arrows/Ins/PgUp/PgDn`) and the cheat will see the wrong key.
-
-`START.bat` prints both the line and the NumLock reminder after loading the driver, so you can just copy from the launcher window.
+> [!CAUTION]
+> **NumLock MUST be ON** (LED lit). Otherwise scan codes `0x47..0x52` are reported as nav-cluster (`Home/End/arrows/Ins/PgUp/PgDn`) and your cheat will get the wrong key. `START.bat` prints both the line and the NumLock reminder after loading the driver.
 
 ---
 
@@ -111,7 +147,7 @@ unbind p; unbind F13; unbind F14; unbind F15; unbind F16; unbind F17; unbind F18
 | F20Kit | `STOP.bat` |
 | IsValveDS | `bin\stop.bat` *or* `stop` in console |
 
-Both kits do a **safe stop event → wait for done event → tracked `kdunmap --alreadyStopped`** sequence. If worker-exit is not confirmed, the scripts refuse blind unmap and ask for a reboot instead.
+Both kits do a **safe stop event → wait for done event → tracked `kdunmap --alreadyStopped`** sequence. If worker-exit isn't confirmed, the scripts refuse blind unmap and ask for a reboot.
 
 ---
 
@@ -125,13 +161,13 @@ Both kits do a **safe stop event → wait for done event → tracked `kdunmap --
 | IsValveDS | `\BaseNamedObjects\IsValveDSStop` | `Global\IsValveDSStop` | request worker stop |
 | IsValveDS | `\BaseNamedObjects\IsValveDSStopped` | `Global\IsValveDSStopped` | cleanup finished |
 
-Kernel creates objects directly under `\BaseNamedObjects\<name>` (no extra `\Global\` path component). Win32 `OpenEvent("Global\<name>")` translates to the same path. This wire-up survives hardened Windows builds where the implicit `\BaseNamedObjects\Global` symlink might be missing.
+Kernel creates the objects directly under `\BaseNamedObjects\<name>` (no extra `\Global\` path component). Win32 `OpenEvent("Global\<name>")` translates to the same path. This wiring survives hardened Windows builds where the implicit `\BaseNamedObjects\Global` symlink might be missing.
 
 ---
 
 ## 🧰 VC++ runtime
 
-The kits include four app-local DLLs next to `kdmap.exe` / `kdunmap.exe`:
+The release kits include four **app-local DLLs** next to `kdmap.exe` / `kdunmap.exe`:
 
 | DLL | Purpose |
 | --- | --- |
@@ -140,46 +176,48 @@ The kits include four app-local DLLs next to `kdmap.exe` / `kdunmap.exe`:
 | `vcruntime140_1.dll` | C runtime extension |
 | `concrt140.dll` | concurrency runtime |
 
-If those DLLs are quarantined by AV or you prefer a system-wide install, run `install_vcredist.bat`. It offers two sources:
+If those DLLs get deleted or quarantined, run `install_vcredist.bat`. It offers two sources:
 
-- Microsoft VC++ 2015-2022 x64 Redistributable (official permalink `aka.ms`).
-- VisualCppRedist AIO from `abbodi1406/vcredist` GitHub release, launched with the documented `/y` CLI switch.
+| Mode | Source |
+| --- | --- |
+| **M** (default) | Microsoft VC++ 2015-2022 x64 Redistributable — `aka.ms/vs/17/release/vc_redist.x64.exe` (official permalink, no URL shortener in the chain) |
+| **A** | VisualCppRedist AIO from `abbodi1406/vcredist` GitHub release, launched with the documented `/y` CLI |
 
-No third-party installer is bundled in the repository.
+No third-party installer is stored in this repository.
 
 ---
 
-## 📁 Repository layout
+## 📁 Repository Layout
 
 ```text
 NL_Drive_CS2/
-├─ src/
+├─ src/                              # sources
 │  ├─ drivers/
-│  │  ├─ F20Driver/          # kernel driver — kill trigger + yaw inject
-│  │  └─ IsValveDS/          # kernel driver — m_bIsValveDS spoofer
+│  │  ├─ F20Driver/                  # kernel — kill trigger + yaw inject
+│  │  └─ IsValveDS/                  # kernel — m_bIsValveDS spoofer
 │  ├─ apps/
-│  │  └─ IsValveDSConsole/   # user-mode SHM console with file logger
+│  │  └─ IsValveDSConsole/           # user-mode SHM console with file logger
 │  └─ tools/
-│     ├─ analyze_kbdclass/   # PDB-based kbdclass analyzer
-│     ├─ kdmap/              # tracked mapper wrapper
-│     └─ kdunmap/            # tracked unmapper wrapper
+│     ├─ analyze_kbdclass/           # PDB-based kbdclass analyzer (/MT, no deps)
+│     ├─ kdmap/                      # tracked mapper wrapper
+│     └─ kdunmap/                    # tracked unmapper wrapper
 ├─ kits/
-│  ├─ F20Kit/                # F20 runtime kit (zip source)
-│  └─ IsValveDS/             # IsValveDS runtime kit (zip source)
+│  ├─ F20Kit/                        # F20 runtime kit (zip source)
+│  └─ IsValveDS/                     # IsValveDS runtime kit (zip source)
 ├─ scripts/
-│  └─ build_release.ps1      # build everything + sync into kits + zip
+│  └─ build_release.ps1              # build all + sync into kits + zip
 ├─ .github/workflows/
-│  └─ build-release.yml      # CI build + release publishing
+│  └─ build-release.yml              # CI build + release publishing
 └─ docs/
-   ├─ WIKI.md                # full RU / EN guide (mirrors GitHub Wiki)
-   └─ assets/                # readme/wiki images
+   ├─ WIKI.md                        # full RU / EN guide (mirrors GitHub Wiki)
+   └─ assets/                        # readme/wiki images
 ```
 
 ---
 
-## 🔨 Build locally
+## 🔨 Build Locally
 
-Requirements:
+**Requirements:**
 - Visual Studio 2022 with C++ workload
 - Windows SDK / WDK 10.0.26100.x (restored via NuGet)
 - PowerShell 5+
@@ -198,35 +236,49 @@ Outputs:
 ## 🤖 GitHub Actions
 
 `.github/workflows/build-release.yml` builds on Windows Server 2022:
-- restores WDK / SDK NuGet packages,
-- clones and builds `kdmapper` static library,
-- builds all drivers / tools / consoles,
-- packages both release zips,
-- uploads workflow artifacts on every main/PR build,
-- publishes release assets automatically on `v*` tag push or manual run.
+- restores WDK / SDK NuGet packages
+- clones and builds the `kdmapper` static library
+- builds all drivers / tools / consoles
+- packages both release zips
+- uploads workflow artifacts on every main/PR build
+- publishes release assets automatically on `v*` tag push or manual run
 
-Publish a release from git:
+Publish a new release from git:
 
 ```powershell
-git tag v1.2
-git push origin v1.2
+git tag v1.7
+git push origin v1.7
 ```
 
 ---
 
 ## 🩺 Diagnostics
 
-Launchers collect a pre-load diagnostics bundle **before** mapping any driver:
+The launchers collect a pre-load diagnostic bundle **before** mapping any driver:
 
-- `F20Kit\logs\diag_preload_*`
-- `IsValveDS\bin\logs\diag_preload_*`
+- `F20Kit\logs\diag_preload_<timestamp>` — full snapshot (OS info, kbdclass.sys + sha256, registry, processes, drivers, system events, CS2 offsets json)
+- `IsValveDS\bin\logs\diag_preload_<timestamp>` — same idea
 
-The IsValveDS console additionally writes `IsValveDS_Console.log` next to the exe with timestamps for every WinAPI call, every command typed, and an unhandled-exception filter that captures SEH / CRT invalid-parameter / pure-call / `std::terminate`.
+`IsValveDS_Console.exe` additionally writes `IsValveDS_Console.log` next to the exe with timestamps for every WinAPI call, every command typed, and an unhandled-exception filter that captures SEH / CRT invalid-parameter / pure-call / `std::terminate`.
 
-For bug reports send the latest launcher log, the matching `diag_preload_*` folder/zip, `IsValveDS_Console.log` if applicable, DebugView output, and the latest minidump if a BSOD occurred.
+**For bug reports** send:
+1. Latest launcher log (`START_LAST.log` / `logs\start_*.log`)
+2. Matching `diag_preload_*` folder or zip
+3. `IsValveDS_Console.log` if applicable
+4. DebugView output filtered by `*F20Drv*` or `*IsVDS*`
+5. Latest minidump from `C:\Windows\Minidump\` if a BSOD occurred
 
 ---
 
 ## ⚖️ Disclaimer
 
-Research / educational project. The code documents Windows kernel ideas (kdmapper-style manual map without IRP, MmCopyVirtualMemory-based cross-process IO, SHM + named event control plane, SEH-wrapped PEB walks, etc.) using Counter-Strike 2 as a measurable target. Use of injection or game-modifying drivers against live multiplayer servers is forbidden by Valve. You are responsible for what you do with this code.
+Research / educational project. The code documents Windows kernel ideas:
+
+- kdmapper-style manual map without IRP
+- `MmCopyVirtualMemory`-based cross-process IO
+- SHM + named event control plane
+- SEH-wrapped PEB walks
+- PDB-symbol resolution via Microsoft Symbol Server
+- `BCryptGenRandom` kernel RNG with rdtsc fallback
+
+…using Counter-Strike 2 as a measurable target. Use of injection or game-modifying drivers against live multiplayer servers is forbidden by Valve. You are responsible for what you do with this code.
